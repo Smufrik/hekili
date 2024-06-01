@@ -31,6 +31,7 @@ spec:RegisterGear( "idol_of_the_corruptor", 45509 )
 spec:RegisterGear( "idol_of_mutilation", 47668 )
 
 -- Sets
+-- old
 spec:RegisterGear( "tier7feral", 39557, 39553, 39555, 39554, 39556, 40472, 40473, 40493, 40471, 40494 )
 spec:RegisterGear( "tier8feral", 45355, 45356, 45357, 45358, 45359, 46158, 46161, 46160, 46159, 46157 )
 spec:RegisterGear( "tier9feral", 48188, 48189, 48190, 48191, 48192, 48193, 48194, 48195, 48196, 48197, 48198, 48199, 48200, 48201, 48202, 48203, 48204, 48205, 48206, 48207, 48208, 48209, 48210, 48211, 48212, 48213, 48214, 48215, 48216, 48217)
@@ -39,6 +40,10 @@ spec:RegisterGear( "tier7balance", 39545, 39544, 39548, 39546, 39547, 40467, 404
 spec:RegisterGear( "tier8balance", 46313, 45351, 45352, 45353, 45354, 46191, 46189, 46196, 46192, 46194 )
 spec:RegisterGear( "tier9balance", 48158, 48159, 48160, 48161, 48162, 48163, 48164, 48165, 48166, 48167, 48168, 48169, 48170, 48171, 48172, 48173, 48174, 48175, 48176, 48177, 48178, 48179, 48180, 48181, 48182, 48183, 48184, 48185, 48186, 48187 )
 spec:RegisterGear( "tier10balance", 50819, 50820, 50821, 50822, 50823, 51145, 51146, 51147, 51148, 51149, 51290, 51291, 51292, 51293, 51294)
+-- Cata
+--- Feral
+spec:RegisterGear( "tier11feral", 60290, 60286, 60288, 60287, 60289, 65189, 65190, 65191, 65192, 65193 )
+--- Balance
 
 local function rage_amount()
     local d = UnitDamage( "player" ) * 0.7
@@ -362,7 +367,7 @@ spec:RegisterStateExpr("ttd", function()
 end)
 
 spec:RegisterStateExpr("base_end_thresh", function()
-    return 10
+    return calc_rip_end_thresh
 end)
 
 spec:RegisterStateExpr("bite_at_end", function()
@@ -401,28 +406,6 @@ spec:RegisterStateExpr("bite_now", function()
     return bite_now or emergency_bite_now
 end)
 
---spec:RegisterStateExpr("bite_during_berserk", function()
---    --buff.berserk.up&energy.current<=settings.max_bite_energy
---    return buff.berserk.up and energy.current <= settings.max_bite_energy
---end)
-
---spec:RegisterStateExpr("ff_during_berserk", function()
---    local end_energy = energy.current + (buff.berserk.remains * 10)
---    local will_use_roar = buff.savage_roar.remains < buff.berserk.remains
---        and combo_points.current > 0
---        and end_energy >= action.savage_roar.spend
---    local will_use_rip = debuff.rip.remains < buff.berserk.remains
---        and combo_points.current == 5
---        and end_energy >= action.rip.spend
---    local will_use_mangle = buff.mangle.remains < buff.berserk.remains
---        and end_energy >= action.mangle_cat.spend
---    local will_use_rake = debuff.rake.remains < buff.berserk.remains
---        and end_energy >= action.rake.spend
---    local will_use_shred = end_energy >= action.shred.spend
---
---    return energy.current <= settings.max_ff_energy or
---        not (will_use_roar or will_use_rip or will_use_mangle or will_use_rake or will_use_shred)
---end)
 
 spec:RegisterStateExpr("wait_for_tf", function()
     --cooldown.tigers_fury.remains<=buff.berserk.duration&cooldown.tigers_fury.remains+1<ttd-buff.berserk.duration
@@ -440,16 +423,6 @@ spec:RegisterStateExpr("try_tigers_fury", function()
     local tf_energy_thresh = calc_tf_energy_thresh(leeway_time)
     local tf_now = (energy.current < tf_energy_thresh) and not buff.berserk.up
 
-    -- If Lacerateweaving, then delay Tiger's Fury if Lacerate is due to
-    -- expire within 3 GCDs (two cat specials + shapeshift), since we
-    -- won't be able to spend down our Energy fast enough to avoid
-    -- Energy capping otherwise.
-    local lacerate_dot = debuff.lacerate
-    if bearweaving_enabled then
-        local next_possible_lac = query_time + leeway_time + latency + 3.5
-        tf_now = tf_now and (not lacerate_dot.up or (lacerate_dot.expires > next_possible_lac) or (lacerate_dot.remains > ttd))
-    end
-
     return tf_now
 end)
 
@@ -461,16 +434,7 @@ spec:RegisterStateExpr("try_berserk", function()
     local is_clearcast = buff.clearcasting.up
     local berserk_now = cooldown.berserk.up and not wait_for_tf and not is_clearcast
 
-    -- Additionally, for Lacerateweave rotation, postpone the final Berserk
-    -- of the fight to as late as possible so as to minimize the impact of
-    -- dropping Lacerate stacks during the Berserk window. Rationale for the
-    -- 3 second additional leeway given beyond just berserk_dur in the below
-    -- expression is to be able to fit in a final TF and dump the Energy
-    -- from it in cases where Berserk and TF CDs are desynced due to drift.
-    local berserk_used = buff.berserk.last_expiry >= query_time - time -- Helper to detect if we lest combat since last expiry of berserk
-    if berserk_now and bearweaving_enabled and berserk_used and ttd < buff.berserk.duration then
-        berserk_now = ttd < buff.berserk.duration + 3
-    end
+    -- 471aa6c removed lacerate wait
 
     return berserk_now
 end)
@@ -555,13 +519,13 @@ spec:RegisterStateExpr("rake_now", function()
 
 end)
 
--- Disable Energy pooling for Rake in weaving rotations, since these rotations prioritize weave cpm over Rake uptime.
-spec:RegisterStateExpr("pool_for_rake", function()
-    return not (bearweaving_enabled or flowerweaving_enabled)
-end)
 
 spec:RegisterStateExpr("roar_now", function()
-    return combo_points.current >= 1 and (not buff.savage_roar.up or clip_roar)
+    return combo_points.current >= 1 and (not buff.savage_roar.up or clip_roar) and (debuff.rip.up or combo_points.current <3 or ttd < base_end_thresh)
+end)
+
+spec:RegisterStateExpr("ravage_now", function()
+    return action.ravage.usable and not buff.clearcasting.up and energy.current + 2 * energy.regen < energy.max
 end)
 
 spec:RegisterStateExpr("ff_now", function()
@@ -569,7 +533,7 @@ spec:RegisterStateExpr("ff_now", function()
 end)
 
 spec:RegisterStateFunction("calc_tf_energy_thresh", function(leeway)
-    local delayTime = leeway + (buff.clearcasting.up and 1 or 0) + (buff.stampede_cat.up and 1 or 0)
+    local delayTime = leeway + (buff.clearcasting.up and 1 or 0) + (buff.stampede_cat.up and active_enemies == 1 and 1 or 0)
     return (40.0 - delayTime *  energy.regen)
 end)
 
@@ -636,24 +600,38 @@ spec:RegisterStateExpr("calc_rip_refresh_time", function()
     return (energy_equivalent > action.rip.cost) and latest_possible_snapshot or standard_refresh_time
 end)
 
+spec:RegisterStateExpr("feral_t11_build_now", function()
+    return set_bonus.tier11feral_4pc == 1 and buff.strength_of_the_panther.stacks < 3 and not bearweaving_enabled
+end)
+
+spec:RegisterStateExpr("feral_t11_refresh_now", function()
+    
+    return set_bonus.tier11feral_4pc == 1 and buff.strength_of_the_panther.remains < 1 + latency and ttd > 1
+end)
+
+spec:RegisterStateExpr("feral_t11_refresh_next", function()
+    
+    return set_bonus.tier11feral_4pc == 1 and buff.strength_of_the_panther.remains < 2 + latency and ttd > 2
+end)
+
 spec:RegisterStateExpr("mangle_refresh_now", function()
     --!debuff.mangle.up&ttd>=1
     return (not debuff.mangle.up) and ttd > 1
 end)
 
 spec:RegisterStateExpr("mangle_refresh_pending", function()
-    return debuff.mangle.up and debuff.mangle.remains < ttd - 1
+    return (not feral_t11_refresh_now and not mangle_refresh_now) and ((debuff.mangle.up and debuff.mangle.remains < ttd - 1) or (set_bonus.tier11feral_4pc == 1 and buff.strength_of_the_panther.stacks == 3 and buff.strength_of_the_panther.remains < ttd-1))
 end)
 
 spec:RegisterStateExpr("clip_mangle", function()
-    --This only works in simulation-context
-    --if mangle_refresh_pending then
-    --    local num_mangles_remaining = floor(1 + (ttd - 1 - debuff.mangle.remains) / 60)
-    --    local earliest_mangle = ttd - num_mangles_remaining * 60
-    --    return earliest_mangle <= 0
-    --end
+    -- This only works in simulation-context
+        --if mangle_refresh_pending then
+        --    local num_mangles_remaining = floor(1 + (ttd - 1 - debuff.mangle.remains) / 60)
+        --    local earliest_mangle = ttd - num_mangles_remaining * 60
+        --    return earliest_mangle <= 0
+        --end
 
-    if mangle_refresh_pending then
+    if mangle_refresh_pending and not set_bonus.tier11feral_4pc == 1 and not bearweaving_enabled then
         return (ttd + 5 > debuff.mangle.remains) and (ttd -5 < debuff.mangle_cat.duration) and not buff.clearcasting.up
     end
 
@@ -719,12 +697,6 @@ spec:RegisterStateFunction("tf_expected_before", function(current_time, future_t
     return true
 end)
 
---spec:RegisterStateFunction("ff_expected_before", function(current_time, future_time)
---    if cooldown.faerie_fire_feral.remains > 0 then
---        return current_time + cooldown.faerie_fire_feral.remains < future_time
---    end
---    return true
---end)
 
 spec:RegisterStateFunction("berserk_expected_at", function(current_time, future_time)
     if buff.berserk.up then
@@ -743,23 +715,6 @@ spec:RegisterStateFunction("berserk_expected_at", function(current_time, future_
     return false
 end)
 
---spec:RegisterStateExpr("can_spend_ff", function()
---    local max_shreds_without_ff = floor((energy.current + ttd * 10) / (active_enemies > 2 and action.swipe_cat.spend or action.shred.spend))
---    local num_shreds_without_ff = min(max_shreds_without_ff, floor(ttd) + 1)
---    local num_shreds_with_ff = min(max_shreds_without_ff + 1, floor(ttd))
---    return num_shreds_with_ff > num_shreds_without_ff
---end)
-
---spec:RegisterStateExpr("wait_for_ff", function()
---    local next_ff_energy = energy.current + 10 * (cooldown.faerie_fire_feral.remains + latency)
---    local ff_energy_threshold = buff.berserk.up and settings.max_ff_energy or 87
---    return ff_procs_ooc
---        and can_spend_ff
---        and cooldown.faerie_fire_feral.remains < 1.0 - settings.max_ff_delay
---        and (next_ff_energy < ff_energy_threshold)
---        and (not buff.clearcasting.up)
---        and ((not debuff.rip.up) or (debuff.rip.remains > 1.0) or active_enemies > 2)
---end)
 
 spec:RegisterStateExpr("rip_refresh_pending", function()
     return debuff.rip.up and (debuff.rip.remains < ttd - base_end_thresh) and (combo_points.current >= (is_execute_phase and 1 or 5))
@@ -801,7 +756,7 @@ spec:RegisterStateExpr("pending_actions", function()
         pending_actions.rip.refresh_cost = 0
     end
 
-    if pool_for_rake and rake_refresh_pending and debuff.rake.remains > debuff.rake.tick_time then
+    if rake_refresh_pending and debuff.rake.remains > debuff.rake.tick_time then
         pending_actions.rake.refresh_time = debuff.rake.expires - debuff.rake.tick_time
         pending_actions.rake.refresh_cost = action.rake.cost * (berserk_expected_at(query_time, pending_actions.rake.refresh_time) and 0.5 or 1)
     else
@@ -981,96 +936,82 @@ spec:RegisterStateExpr("excess_e", function()
 end)
 
 
-spec:RegisterStateExpr("should_flowerweave", function()
-    local furor_cap = min(20 * talent.furor.rank, 85)
-    local flower_gcd = action.mark_of_the_wild.gcd
-    local flowershift_energy = min(furor_cap, 75) - energy.regen * flower_gcd - 20 * latency
-    local flower_end = flower_gcd + 1.5 + 2 * latency
-    local dump_action_cost = active_enemies > 2 and 45 or 42
-    local energy_to_dump = energy.current + (flower_end + 1) * energy.regen
-    return (
-        flowerweaving_enabled and
-        energy.current <= flowershift_energy and
-        (not buff.clearcasting.up) and
-        ((not rip_refresh_pending) or (debuff.rip.remains >= flower_end) or active_enemies > 2) and
-        (not buff.berserk.up) and
-        (not tf_expected_before(time, time + flower_end)) and
-        --(not ff_expected_before(time, time + flower_end + 1)) and
-        flower_end + 1 + floor(energy_to_dump / dump_action_cost) < ttd
-    )
-end)
-
-spec:RegisterStateExpr("emergency_bearweave", function()
-    return bearweaving_enabled and debuff.lacerate.up and (debuff.lacerate.remains < 2.5 + latency * 2) and debuff.lacerate.remains < ttd and not buff.berserk.up
-end)
-
-spec:RegisterStateExpr("should_bearweave", function()
-    local furor_cap = min(100 * talent.furor.rank/3, 85)
-    local weave_end = 4.5 + 2 * latency
-    local weave_energy = furor_cap - 30 - (20 * latency)
-    
-    -- With 3/3 Furor, force 2-GCD bearweaves whenever possible
-    if talent.furor.rank == 3 then
-        weave_energy = weave_energy - 15
-        -- Force a 3-GCD weave when stacking Lacerates for the first time
-        if bearweaving_enabled and debuff.lacerate.up then
-            weave_energy = weave_energy - 15
-        end
+spec:RegisterStateExpr("should_bearweave", function() -- aka can_bearweave
+    if not bearweaving_enabled or buff.clearcasting.up or buff.berserk.up or (buff.stampede_cat.up and active_enemies == 1) then
+        return false
     end
 
-    local dump_action_cost = active_enemies > 2 and 45 or 42
-    local energy_to_dump = energy.current + weave_end * energy.regen
-    local bearweave_now = (
-        bearweaving_enabled and
-        energy.current <= weave_energy and
-        ((not rip_refresh_pending) or (debuff.rip.remains >= weave_end)) and
-        --cooldown.mangle_bear.remains < 1.5 and
-        (not buff.clearcasting.up) and
-        (not buff.berserk.up) and
-        (not tf_expected_before(time, time + weave_end)) and
-        --(not ff_expected_before(time, time + 3)) and
-        weave_end + floor(energy_to_dump / dump_action_cost) < ttd
-    )
+    local target_weave_duration = 1.5 * 2 + latency * 2
+    if talent.furor.rank == 3 and (not leaveweaving_enabled or cooldown.feral_charge_cat.remains > target_weave_duration) then
+        target_weave_duration = target_weave_duration + 1.5
+    end
+
+    local furor_cap = min(100 * talent.furor.rank/3, 100 - 1.5 * energy.regen)
+    local weave_energy = furor_cap - target_weave_duration * energy.regen
+
+    if energy.current > weave_energy then
+        Hekili:Debug("Current Energy %d is higher than maximum Energy to start Weave %d without capping %d.", energy.current, weave_energy, furor_cap)
+        return false
+    end
+
+    -- Prioritize all timers over weaving
+    local default_weave_duration = 1.5 * 3 + latency * 2
+    local earliest_weave_end = query_time + default_weave_duration
+    local is_pooling = next_refresh_at > 0
+
+    if is_pooling and next_refresh_at < earliest_weave_end then
+        Hekili:Debug("is_pooling (%d) and next_refresh_at (%d) < earliest_weave_end (%d)", is_pooling, next_refresh_at, earliest_weave_end)
+        return false
+    end
+
+    -- Mana check
+    if mana.current < action.cat_form.spend * 2 then
+        Hekili:Debug("Current Mana (%d) not enough for two shifts", mana.current)
+        return false
+    end
+
+    -- Also add a condition to make sure we can spend down our Energy post-weave before the encounter ends or TF is ready.
+    local energy_to_dump = energy.current + default_weave_duration * energy.regen
+    local time_to_dump = earliest_weave_end + floor(energy_to_dump / action.shred.cost)
+    Hekili:Debug("time_to_dump (%d) - query_time < ttd (%d) and not tf_expected_before (%d))", time_to_dump, query_time, ttd, tf_expected_before(query_time, time_to_dump))
+    return time_to_dump - query_time < ttd and not tf_expected_before(query_time, time_to_dump)
+end)
+
+
+spec:RegisterStateExpr("should_cat", function() -- aka terminate_bearweave
+     -- Shift back early if a bear auto resulted in an Omen proc
+    if buff.clearcasting.up then
+		return true
+	end
+
+    -- Also terminate early if Feral Charge is off cooldown to avoid accumulating delays for Ravage opportunities
+    if leaveweaving_enabled and cooldown.feral_charge_cat.up and query_time - action.bear_form.lastCast > 1.5 then
+        return true
+    end
+
+    -- Check Energy pooling leeway
+    local next_gcd_length = (action.thrash.ready or action.mangle_bear.ready) and 1.5 or 0
+    local smallest_weave_extension = next_gcd_length + latency
+    local final_energy = energy.current + smallest_weave_extension * energy.regen
     
-    return (bearweave_now or emergency_bearweave) and mana.current > action.cat_form.spend * 2
-end)
+    local furor_cap = min(100 * talent.furor.rank/3, 100 - 1.5 * energy.regen)
+    if final_energy > furor_cap then
+        return true
+    end
 
-spec:RegisterStateExpr("shift_now", function()
-    local furor_cap = min(100 * talent.furor.rank/3, 85)
-    return (energy.current + (1.5 + latency) * energy.regen > furor_cap) or (rip_refresh_pending and (debuff.rip.remains < 3.0)) or buff.berserk.up
-end)
+    -- Check timer leeway
+    local earliest_weave_end = query_time + smallest_weave_extension + 1.5
+    local is_pooling = next_refresh_at > 0
 
-spec:RegisterStateExpr("shift_next", function()
-    local furor_cap = min(100 * talent.furor.rank/3, 85)
-    return (energy.current + (3 + latency) * energy.regen > furor_cap) or (rip_refresh_pending and (debuff.rip.remains < 4.5 )) or buff.berserk.up
-end)
+    if is_pooling and next_refresh_at < earliest_weave_end then
+        return true
+    end
 
-spec:RegisterStateExpr("build_lacerate", function()
-    return debuff.lacerate.stack < 3
-end)
-
-spec:RegisterStateExpr("maintain_lacerate", function()
-    return (not build_lacerate) and (debuff.lacerate.remains <= 8) and (rage.current < 38 or shift_next) and (debuff.lacerate.remains < ttd)
-end)
-
-spec:RegisterStateExpr("lacerate_now", function()
-    return bearweaving_enabled and (build_lacerate or maintain_lacerate)
-end)
-
-spec:RegisterStateExpr("emergency_lacerate", function()
-    return bearweaving_enabled and debuff.lacerate.up and (debuff.lacerate.remains < 5 + latency) and debuff.lacerate.remains < ttd
-end)
-
-spec:RegisterStateExpr("should_cat", function()
-     
-    local spend_cc = not bearweaving_enabled or not lacerate_now
-    local shift_now = shift_now or (spend_cc and buff.clearcasting.up)
+    -- Also add a condition to prevent extending a weave if we don't have enough time to spend the pooled Energy thus far.
+    local energy_to_dump = final_energy + 1.5 * energy.regen -- need to include Cat Form GCD here
+    local time_to_dump = earliest_weave_end + floor(energy_to_dump / action.shred.cost)
     
-    --Also add an end of fight condition to prevent extending a weave if we don't have enough time to spend the pooled Energy thus far.
-    local energy_to_dump = energy.current + (3 + latency) * energy.regen
-    local time_to_dump = 3 + latency + floor(energy_to_dump/42)
-    
-    return (time_to_dump >= ttd) or shift_now
+    return time_to_dump - query_time >= ttd or tf_expected_before(query_time, time_to_dump)
 end)
 
 spec:RegisterStateExpr("movement_speed", function()
@@ -1109,10 +1050,6 @@ end)
 
 spec:RegisterStateExpr("bearweaving_enabled", function()
     return settings.bearweaving_enabled and (settings.bearweaving_bossonly == false or state.encounterDifficulty > 0) and (settings.bearweaving_instancetype == "any" or (settings.bearweaving_instancetype == "dungeon" and (instanceType == "party" or instanceType == "raid")) or (settings.bearweaving_instancetype == "raid" and instanceType == "raid"))
-end)
-
-spec:RegisterStateExpr("flowerweaving_enabled", function()
-    return settings.flowerweaving_enabled and (state.group_members >= flowerweaving_mingroupsize) and (active_enemies > 2 or settings.flowerweaving_mode == "any")
 end)
 
 -- Resources
@@ -1746,6 +1683,12 @@ spec:RegisterAuras( {
         duration = 3600,
         max_stack = 1,
         copy = { 16818, 16817, 16816, 16815, 16814 },
+    },
+    -- Increases your attack power by 1% for 30 sec when you use Mangle (Cat).  Stacks up to 3 times. tier11feral_4pc-Bonus
+    strength_of_the_panther = {
+        id = 90166,
+        duration = 30,
+        max_stack = 3,
     },
     -- Health increased by 30% of maximum while in Bear Form, Cat Form, or Dire Bear Form.
     survival_instincts = {
@@ -3952,11 +3895,27 @@ spec:RegisterSetting( "maintain_ff", true, {
         "Default: Checked",
     width = "full",
 } )
+
+spec:RegisterSetting( "maintain_roar", true, {
+    type = "toggle",
+    name = "Maintain Demoralizing Roar",
+    desc = "If checked, Keep up AP debuff if not provided externally.\n\n"..
+        "Default: Checked",
+    width = "full",
+} )
 spec:RegisterSetting( "rake_dpe_check", true, {
     type = "toggle",
     name = "Compare Rake DPE with Shred",
     desc = "If checked, skip rake if shred has better DPE.\n\n"..
         "Default: Checked",
+    width = "full",
+} )
+
+spec:RegisterSetting( "cancel_primal_madness", false, {
+    type = "toggle",
+    name = "Cancel Primal Madness",
+    desc = "If checked, will recommend to cancel primal madness when on low energy.\n\n"..
+        "Default: Unchecked",
     width = "full",
 } )
 
@@ -4031,54 +3990,6 @@ spec:RegisterSetting( "bear_form_mode", "tank", {
     sorting = { "tank", "none" }
 } )
 
-spec:RegisterSetting( "druid_flowerweaving_header", nil, {
-    type = "header",
-    name = "Feral: Flowerweaving [Experimental]"
-} )
-
--- TODO: Needs definition.  Included .simc file does not have this setting.
-spec:RegisterSetting( "druid_flowerweaving_description", nil, {
-    type = "description",
-    name = "Flowerweaving Feral settings will change the parameters used when recommending flowerweaving abilities.\n\n"
-} )
-
-spec:RegisterSetting("flowerweaving_enabled", false, {
-    type = "toggle",
-    name = "Use Flowerweaving",
-    desc = strformat( "If checked, flowerweaving abilities may be recommended to attempt to proc %s.", Hekili:GetSpellLinkWithTexture( spec.auras.omen_of_clarity.id ) ),
-    width = "full",
-} )
-
-spec:RegisterSetting( "flowerweaving_mode", "any", {
-    type = "select",
-    name = "Flowerweaving: Mode",
-    desc = "Specify when flowerweaving may be recommended.",
-    width = "full",
-    values = {
-        any = "Any",
-        dungeon = "AOE",
-    },
-} )
-
-spec:RegisterSetting( "flowerweaving_mingroupsize", 10, {
-    type = "range",
-    name = "Flowerweaving: Group Size",
-    desc = "Select the minimum number of players present in a group before flowerweaving will be recommended.",
-    width = "full",
-    min = 0,
-    softMax = 40,
-    step = 1
-} )
-
-spec:RegisterSetting( "min_weave_mana", 25, {
-    type = "range",
-    name = "Flowershift: Minimum Mana %",
-    desc = "Specify the minimum Mana threshold required before Flowershifting may be recommended.",
-    width = "full",
-    min = 0,
-    softMax = 100,
-    step = 1
-} )
 spec:RegisterSetting( "druid_leaveweaving_header", nil, {
     type = "header",
     name = "Feral: Leaveweaving [Experimental]"
@@ -4119,7 +4030,7 @@ spec:RegisterSetting( "bearweaving_instancetype", "raid", {
     desc = strformat( "Specify the type of instance that is required before %s and %s may be recommended.\n\n" ..
         "- Any\n" ..
         "- Party / Dungeon (5+ members)\n" ..
-        "- Raid (10 / 25)", Hekili:GetSpellLinkWithTexture( spec.abilities.mangle_bear.id ), Hekili:GetSpellLinkWithTexture( spec.abilities.lacerate.id ) ),
+        "- Raid (10 / 25)", Hekili:GetSpellLinkWithTexture( spec.abilities.mangle_bear.id ), Hekili:GetSpellLinkWithTexture( spec.abilities.thrash.id ) ),
     width = "full",
     values = {
         any = "Any",
@@ -4217,8 +4128,8 @@ spec:RegisterOptions( {
 
 -- Default Packs
 spec:RegisterPack( "Balance (IV)", 20230228, [[Hekili:9IvZUTnoq4NfFXigBQw74MMgG6COOh20d9IxShLeTmvmr0FlfLnYcb9SVdffTO4pskfO9sRd5mFZhNz4mdL)g))2F)red7)J7wF3213D3N92S5(h)4g)9S3kW(7lqrVIEb(rgkf(3VIsqzr4MWBE(FwX39TKC0rokL5v0iqc)9hQijSNZ8pyf6TpcYwGJ8)XgWiNihpIfIIlJuW)B0kYXMWckjNsyV1egNtBc)l8RKecyxAEmjbSgkIrYZk9kO4O80di2FS7ptr0xdYJdyNWbxijhVLeVBrvXYfhQIJ9EHeZu31RQO572GHDkNMv2PSDrsZZZELKfaClDublY5R189R7cRfHssce)zqcPKDl3dVJKryQsrRYmfcLJ5MJV(zCaodNsWLpTDs9klqT88mIsqhsWE8fcYYVmPMXKYtk03JttqwjqcHsQYq0ajM3EgLuH3160XrjKIsCqRed84wbQmpzcGALyganeIRN7HmTUU3HmWYtGo3POG(chWVCXph8cuIqzbq6EKB3zcQKfGkksi4J7wxx)Vvy6Bbmsk(dti9t72UEkpylJhJeIqXCjHP0ZGecpHM7(QtvU(sn)VK0Z6eoj43OfeLOxxRh3L7Ss9cdhhW0LmenMqBV(k8lGo4YGlue7eKpV8gD0KeOU2uEkofrYk)IWiEsW9Ej6yDDA(zs2lRmOaVOLKcloIBrvUgNbc9mudQXfH5foZqSkk2(jdkPzQictj4GRMKFizOeCgZJKc(PZ4JbkY4HZ4NE4a8cnVQiifNEatlFA39UpsGpahXckVG6Qd3DSuxFqXIo9GwCNGtoxfb0lFjbwYRBDjvE3UqhHWL6IkJFBnSqB8DqP6HqnAILwMAVo9AXlbbADc6XtHUXqiaffHtWGzH9VTQKhQJdGePDB6Zv1QIV0YQDhPNkXmg4qlL3jYZtoMFbAPGXxqVzqerdYF)2LBqcdNw(730tvkWqHzMLdLqSsDzbeRC)HvgMZmf0v3llhihTcvtbHHygEfCI7Ec5nlZiw)ufLsGkVWmHNHuAyNRZD(G)EW1KXdn(7FoTiNYaCd)utOaIMq(CoLEnF3FF7V4JZYV0a))pANqUJl(F1FFemnkuRcXhZ1smlCjmACt4IMqxxCdRRBcDwkVj8lsAnOCUqTUsZHRKd(cJs3jKpdoVo5kWhZYuTKvazpEY954TLJNCdT6)Qgce9JQIkJrAYC)y0R33nJEdcVXG(dnHpTRj8EN(jfu4C5tZWvPDVQhl1n4G9GtWKebozwZU7XSBdoCFEgCtpm6mBBPPkQPABTh5F0jfCyOEyAtN5ySz90GmSbL1SAg)PHXOQeMTRJsf0FmL4MCG4rR8X(g)(bxZ(xsb5sd8mAViAa2q1NRxvM4S2vdCE4YL(6fllh4X0TT2vRN76BqhVuw)9VfD1MS8kzLmfThypzThvLfpRECFMMkQpZ2OyJyYHHLAyI4YON55FF8UzuBBqPsLErASQnQoJUk6pxMhAC39UnFD8PpuiN9r(83RmaeNGJgt)LZszu1KuUZA(LtQRdlAJx6xuhFqb7nWhTdPJ300pXHJZF)8goDapmOvPE7n39kDmzOLMbUBr6ysrx9cARLB5guo4sH4yVAsC5)cErVJ0Jw56kBQralxaENgr(rQunIMNYsc90gX1W1THANXefoOyD902PTU5ST9ey5WrFDtHRT8TK1pnfSekv)IsnHWOGRfUJ(Vdvt4hSEryOM8Pi3U2mTq(rDSDH4DsyZpb2CjSnnnj8WVpLTBFtt4Z6F)lBtzE1egEl1WR(4S)Sg)gJeRRFGVwhNzEz)(Rm9pkuumWqfFYe)9Fdh)FOiX8t())d]] )
-spec:RegisterPack( "Feral DPS", 20240519.1, [[Hekili:TVv3VnoUr8)wmkGrcYEUw(JK9aIZdfffytpKEa(q7BsMwIown6lqrLSzHH(BVdPeLO4xwjx2R3d7lo2IZmC4Wz(nJgY475)B(BJquS)dlMVy181E)8SflxEZYR93sFTa7VTaf(e6r4lzOu4Z)bMGsQ393)1TSHEnjhfXerzEfjeg2F7(Q4e6xY83BuUlwa0wGd9FWZZF7X4OiCdP4Yq)T)NC6V8pR3jMdsvCu9UFLeNtIPX4Y67RV)3YF8XeC9ou0ZOSqmmojNIOX5zW3WH5PP4Si(VlR3fdpKEeOombvc)oVGpWmq1j5hItafgf28OcoZ7r0R28xtrKNcYpeaSg8sCs0NIpSzsvX0j7RoCyM6OZQkQV)Vyso0J5KSYwURV3ejHiAWHCs6WPypgr4pEMn(kY5l577gfEwvjoiMItlLFOGW(NCe2wjWEaokafgItaJnBOpXyp)WHGhdJ24X0NsmnyFEwv5mW4tU5aBxjyvr4gVPxWvtA8JGKcourEfu0tNcZZtIYFjBWaeCkkoR8UnERVuwnivzbn)kijUK(jM71g2c)fm6zmB(1mftfdhN9yaodTpb2)hJidOOSNcq5we7edYDktqpJHFItbxV7wXN8G08iCJ0EZZ)ByUFNtfZzsErkCUyZJYYzXyeMjbjZNIZRK3iJdwaqVFGU7fL8AGebQ8UhgatEYmFTdQYtidsijGPZFI9raFLuqItbp3uuugUSSBrn8XmBeyCip(6SWkcbNrVDXCDDQDNJjeCkqnolKPnTETQ0FaHjX4GdXe4dw4dJpMAL)Yukc4MolVIwghHxOXkpAl8iJQG29IHSCJkle0ZaqD36RKIslWrCUfrH36nBTkBLhjyoexeMZhjUqM8PWVbrKH)kfqw1MZ4cgRmAGfLMO5Auajhr4ub)1ezWAnpmoVQmypGFXxaWFnrzkkdq)f2J2FzGoc6jUCy)1YmQzDlpMxLefKW2inUBoy3VLARB9nBg66VEMLwjDij)fCJSMclm0SIq6DaemfagkNLgNfWhlGnMQN6kn3NUn1lWFneCVdW3TPHIz8HMbjaYIoDQj8gwZKqujBQ4a5TWu8ym(dgoFBA)zk6RxQe0ZWFoxGVIYF98F6ctQXuV1Non)stIxGnOjS7UE(0ZLfYKavCuzzIP0O78UkbkHbcXnXZqFXl6ZwghLNi2KdZjKQcAozJ3Pt6KKwrJt4PF34D5uw298GI84mAzNTE(0MO5EnSl6CJNX1IyR3909oMTPxWmk2i4QoRLX9mri5K)CPwLVex0TjQhRig1v8IzNJVpb6g9EDKMro8SdRcybNry5k0InN0QKGWnZyckKvWiEygqXtnZtOuDc9YF6KXYV8Ck((quDzQBJlzpYT4uTn8ITyMtWu)TyO8yc(rM9VP8yyUpIrj0JS9RBxo3mVLvKNJFgYTaEEWgAiTuHXvwyCqgj2aot4lZzkQkPjx3J4oCW1RntCrvYZGZY342YOC6mHXaqldFc8aNo4HqneHpTz5WhkI8wzzLyYBST2Iu0)nNeGiPWNakvvtugdT(0PlAPrIFwwadpvOaxFPznicdYhLe)nwn1cm9w5GkSoXASjn96J1zfSOes5OmzNnZuByPYU5TFEU0ByoWD71mubedxcfZcOhMfQC4ZeJ75tus4BZrZsGLGa6rcQ84i9k(q9pVOzf0XDFvm9p6CByYMj9j52L2J(yajgbte4ZVxafroQ3fOIyYFFalD5Xgl4sldVZnWrdW4kL3FCGmTAX))bA0liEKGnTm(waCySmoqhXBbydpyqTxcFsgvsDOWu8wlFFiaAdRI3cOMnVTpC))F3aygmnJeetksFeYn8vO63Gg8JY2AgnTmpDYyi9A)TWQPeMJUgdVy2c)TVGizmNj)TFjTiNqzn29M6DnQt9owBPkNvFV)w(3yDCUtdHF8aVn2TTjZ)V5VnKetbJgYFBpkz9UBR3TCUOLV(Bncl7tbfBSsBLK00bPzIAPvrPablPwQa2m5SYQCKJBR3Dx9U1R7LfBtLX(ARSBeUy306D6Ep172agq9bB3BBSi9ZDNJltbU2UcCoq76DNovV7cysnbD3OowHV5k1117UuY(QgmZ0VBoN(PbNRQwMa1LvoRa7n2TbQOgTmv8ZVP9WEH1IcYeXppsViqH(SKRDtscMa8MBvctu8kK9LGXuaK7fUGbU45XX9oVDqZYZjJUfY01KMrLKLYKOVNRqT94R3xaYf9lAzm9gNgZ46g8dgec5nYG4wvHb2zXkF9qRCLI1GYCapapM2bTkiU7iMuSFd2pAoYjfkSdeA7yM4wtpH1KBZgEGtngtxT7dWdzYy9aJQLZ)QzX12me2Y2jQBR7mQ)y6y6j7bkNLt)8QCklnPYcAovvbJy3G1MN1jgNy(qdRPINEyvNMQFctJxz7QnWn4(BwH)q0l3a6nTWt6eTSyOwmUzTTnCUrOvNZrlA3O2GHuwwIjOjgU74IDxGexgdqPnCa3YWfdh0D9s6cx2zWOM)WYZHLq7n6oxzd7DAtLaZR39t94jQnYLPOm0cgUY8bGgsGlMakSBbuvI7AuIPJd4YywC7qP9MBknIpxa(5vq5ZiEdWLkwTVp5UX5al1zoydbmnZM5Q1(c6USDXR3LFofn2g(UJHM5dBImPOvJqBKIDKZXOz)UvlrUkHX3o5xPSZmWxJFaoUXvNmoB9FwwrSZ(XnOS4KxAC8B4t90xKkEsjWvY2jyXnES(rXWxPIJJHVwTCKmCcnaTSATBqs7O4nNuJ7xqPbZZnENYfQ4da8s6QwOJezqsQit9W7D3ldTSIAxddBg4fZDdvz4(yiR0TPDCdt0EOzCe0H3pd3Bpocvh37536XEMQwmDLo42gVzRLJ2EU911C8kJA31dHC4l(b35dditoErYMBcIK2exW4WXBokUwiwtp5z3NxCrrgywLUmjC2T7G3FdsSLsXZE2wXLlrhNZXRtQDltC7q44L(uVbkwC2h(2ET(gdQN6bp7UDFpakx4gO0ZUxlKjYCII(R0I9KesJi1yy(dv1YnDpkf9vJ5MPQVg0pAc5pAc5pAc5FGnHSR4gJD)ZESiJpL30FPA9JchEhzo(qA35Gx11r7oxjt3z7L5hDC23JEz6iu8T1lZBgAcv7LPE2enPmMnv2k1kCda1n4uXAkgMk3vVZ1bM(BfLMd)BQGD9BuLzZMJUX2F)VADLDjt5(2yp7GGVHfljRpRhxGWGsz61gzAAm8OsC0)kt()wfWn(l)BM7yf7)kd)TBRkWe4TNl5C4))(d]] )
-spec:RegisterPack( "Feral Guardian", 20240519.2, [[Hekili:TN1xVTTnq8plbdiifRqloooTfiopmmSHMnKnaxS9MKOLOT5SSOafLtDHH(SVJuusuuKYkPPRVeuGKiY7oE8(ZV74v)j(FYFrmIJ9F4QlV66lNn5dExnD2Sj34VGFid7VidfTfTg(Ju0o4N)kMHskd)TcelMGsf7FiHIIfYjNwWIaA8xSSGKW)yQ)s7cFgqBgoY)Hjt8xSHehJRifNh5V4FO8)43ldvh0VWkiXLHFcLUTm8VyekJWj48Y7lV)t01RtWLHO49O0imqfJYrCcnf(lCeD3oCAS878YqcSiFdqDuckh(MMj3WdUam6kscO2OOQLYKmVeX)X5)0oeBBaDvaWAWJKK43swn)SISZpBzXQvEM76vKvEVnXW3qzP5kMTtYsmIfSIY2nivzu597(MDH1kYXbeoExU(I1e2UYgWDYaZoooaffHta7RyR3kyNUAvW6O45t0zGvKgu9vqcjN)wraWCPAYbVraIIfQQ0q0O8Gf4Cbp7Xb4u8oWtD3tqMwL3jzpcXFeJ23QnWcnkZzO1RzuDz03q3AQB0eGUvmC6xiG1IHxd3fL1c4zdgLW34LfXVD6L25nVGTNShLeqsZ5K0iEUbJx7GXvIO(GOni2ACGydbFCXxCpAbpNeJFNDo3HkseeZGKvVOcgO987MnZoXzfj7XmYxK2Syk3lbfjUHypojAljD95DwmNdGaZN2DrgEhcUE3ETJBccoaCWkcd(H4wjpkSkV5FPSaeBh8tgoUqYUxm9X0JhVqrJg)c)OLvRvGBEJDnigdYhLq(cCFcy0kBPsoOmNhCp20o((71yfCOelHComBRl7SDMWPcVOP3823dbn)G1WTdPOminopJbYm3UqRpAzyVvF(zQCpPg3blRBGwka7kdoTtaFddLVzKrfVOXNxuDdA4gUdhpAS0PCy6MP(hYTtDN9jasScMiGk)Aauu8)8avQp8NhWII7XdUOy4z6ahnat9T67liJsl((d0OuKNoyJIXNcGJGLXb6OeUt8G646hjzTXKcQ06EWw(MIVxeaTMa8Ha1CfT9Ih))vdGzX0msqmTm9ri3OdrG5Qc)iF(eNUGJhTMspRlszDhCIGfYAWDfSQGDOBNPs8k2HancSkG6CaRmR20bJO2(cX7WWvln6GmKqsIvMScabNAk9XZ7IUELD(1HLH1hevwJpgAVkHvgDaU1Dz4yPiAmYt8MzL38naIKgefJKPZZ5W3GCsXFMdVFY(PtYKyfaHWf1(HivWg0qXVDslyeOreArEWssvmR43ojxLRQSwQVCrmdTvHRT1nr28c5BOfjXbjcsC7)7e0Oyz4iMkp3WoMlWFocNNhGVBEfzEYT8GxVLgRaeG8pelcj6eyDlmrlw3XJIEmwFOgmFU6ZDOp)g)fawsoi3MhMFLh8s8hrSubuU)IpUlJY4INupdEFTufkdfV4k3R8E4LYfIh06Vyrb8KY0ICGJLOCC8FM2mGGQhSFXh)B4WKmkgqqdCc8XdYrpGtrltWX()S)Ii4L9qYeYFrBlnLH3wgo9Y63M7VWApu(C4EmwPDTM063rLqutDkkJmtn1YS7kHCU2PC0lYwgEhyLN1klbcSG9zoz3AT9WZld7d1xgohmG93uLVxzrAp7MQmcf4g3kWP6WQm84rW7dhQT(SQuhN9AjvQBkdFJM91eMvOFV7u6xVEVmvlBDGPRCo7cRYU1rf7rRqfF)tYh2kmvASqeFyKrrGc9ETq7Qo6ecyYLoLWzgrf6XsWEgikTcVMbP4L5XTbVn9rPFMc6UsNUQEcnjzQoj995gu7o)65LGCr7LwVbSQGg7nHzjoOtk0KrMeRufbyNdR8nDTYfgwdUiaCfSmVbATM4MXdAy)64pQgxObfs3HwFucb3WHJXjAic3(ivWfQDoFcFGq6TD)lXg1otJX)vvzjOAW0DAvDy8ZEh9t8eggCSQ6C7iiRZMKdICCNuDpbdJYbYux1BUqvHdntnE4ATsH0jH3YqT1J86U5WLEn0WQPGpCj2bUuvbtdfXYnddETnJxBZ412m(FSnJHRV7ox0cUVwLW2je12jX3UgAMoYgAU(j1TYlDE23IUvgiv8P1TY7gUBLhMygX2tkJXPkUPoHBaOUodPsujqwHOP46Gfhmg1KwKT(IgnhnybcT5p1pd0IKCxFWYWPgQIPvzunJkzKKXCQobCO744Xv2cm)JO)jBd0s6wN4PvdRAwkJcKwBix1YrE57mSlnehX8wggAvn9lnTHKDcKu1qW0oM2PK1IHA3QqQMiwhRQ2uZob(A7uY6bTPCidGQwp7mDd)wnSsRm1B(zdhpmWR5mhRMJy9kewJqddyh3rDaCA9q3GQpZRN6L(G30Gwng(M2oA)NnixS7q4K43TdIRduCDix9)8)Vp]] )
+spec:RegisterPack( "Feral DPS", 20240528, [[Hekili:TV1)VTTUr8)wmkGHZlTEwjXP9neNF4THb0UHUhM72(njXirhRfzjbkQKxkm0F77osrjkksfL08W6akqBIn59nE8Up84xIVN)x83gt4u)pF2QZUy16Z(WsVvN9Zx8b)T8hlO(Blir3rUf(qg5a8Z)cLrsRd)Z)6wSRhtZjXOikZRyrq3(BVPkjL)Xm)BSk3ZVeOTGg5)zpp)T7tIJPssPLr(B)358)2FTouPdwvsCD4VYsYzj8eAz9NQ)0xYV92uADij(Eswef6NLZj8K8m4t0O8dhOzXIVxwhManY3duhLskHVNxi6yjy6S8DjPGbtIKnviy(gc)0n)Hde2Db57cawdEijn(Tj72m7MQD7wwcQkq8PQI6p9gBmZ3NZYkfSG0yJKiqi7YzhAiAUu23qjmrZlDXxrUyC(P2EH2QkPbjC6Hs9gve21YEyUKboEACajkIMcEySR3ISNVBxWTrXB8q7PKcdW8SQYLGhN9(D4urWffrB8MVqyM8KBbjfSRI9iyOhpgLNNgN)qwVoy0dKKSYR34T(eDZGvLfi)wqAsj)Tym1gCG)aLCpf1)axXCv3jz3gqZi3Kct6trKbCs2DbKChIDMf5ohf09u4R0dq821xiuEWH8yQuApB9)m09luvyWK(GufCH6Xy4C2ueMnbPZNrWlgn(M6W)eH)hHmw6osvkVo8F0Mt(WEAMmruXyxSDKmHPlUzy4iN9yGgbM8Ed0bLDND(A60KNie3ivKf)w8hbIrEbl5aePFGeNrlfPVn01VJ5cxt)2qpn4Iz3(4YOkgJMXV6SvMADhHYsOb7syWpWKkufOYZFyoNWULYxMxXltIPNnGvroy0EKQGMzO(S8EtwoqYausfXsbW98cy0DmA5EuRMSWskqAHFzR3sY9WIabSCctqf8BBKbAkpkjVQm4gausekb)wmix03fD9gjNl7ZYsaJkl(4XzL7ZRsJdAXgoz8HyZ3SnUi3jme83263LRcxhl2gdTzYc4sdZCkZDn8KI0BLjMWzlnAHB32eYEgvSW0c6VfbbHb0wpQOlLJuMkd6Ifrk5aEJa0UbssKFiAWCYP57hi)27A(iJEln7NsHL0ZIE8KxqAFijdwT(aqycSQSi(T3GcrXEk4aJ0Slx9Uf2gGZ9wF84QtSjEfIXaHD9LRM)uRLztGgzg465CE81EN24QSXt)yUfDR5MeNNQQ8ikNXQk45SnEhpoKKdv8KuH3EJ3jZXAeYdkYtY4LQr0Mvs0knlunyUAJN1XIkOAC19c028fOtXfbN26TSoNPsHN99Lzv(qsr7K4WSqvVJLjAtSJSsHiR7n)IcSbs9(NLq1Tj7Qd1QOOouv7GmLdenKqIyoiz1Hyeop5GgStl8Li2Sk1szHsmlquZBgFiDGJIe)OD5ePvNqh32PLMXqaVbADMMArkAt8BTbrEekkPx(0Mo47zKY9Y2CnmBz1obsryVVbtrphx5m7bc4m7xGc)WkaHjwiuNBzUSmjtS9ht8Z2corRdCrFnbQ0xazRQ0h08EkjLVFzre)QZxzN3Yk29j3dlzbH)G(J4LgmEHdg7Tqh2XOvPOZPWljwRRBc(61RTtCrv69GV)Rc8G4C(YuseocPaKD0DGZzEVgH9RfD3MZ73Ok9)chJeB5FnthLlrw5W)d2TB(IyQyU8a5)KZciSdWpba0kzmiMMD8OIgnPIlqzPvLzD5jNy3WIPGciPjFf31GA9MHgg2tRPrkCArdeNMDnSVwNMlRtBHvBZl2zQjX3y2)QpSsBZ19cpFmJuajuLqf4WG2UqvQwKSzngzMr9pUcmDarOiWgeHZOOx145fYrql3Df111u3m2t7MgQKRo3D2QaS6PXQCuQxR0uR39sHRuld)IGSuk)LbB1wh3uHUAy4foDpz4RXkH4)5qyng33XWyd3JWeHYAy85aNHSmnin1gJCH20RCuvmmsL2r)ylBUHVxf4Y(BSXbKPROZx98LVz4rlUMjcrQHmmb5g9iuhyGeVPSP8qBdZJhTcbS2FlmAkbD0Em7qtpqyzyOK)2pEOiNXra53dyYcJPoepTVYL1FYFR4t4P33AFWx(S4kbAqY9)f)TrSeo4Yi(B7WuRdVQo88vQJp3FRvqCFoywtvAxOjTHq6OOo3POmaS1mlt4Duox4uo6zT1HxxhUEDNSWPuK91oz3kyr4CChxMXo1HBah4WoBMzLEKoD3g2IgWLonaBq8cDSauZtb0xhE8OoL9H7LMQtiFHbFzD4jW)0C)Mz6O5)(NH5Jy2gdGblfyA32wqq36DUOG0PBoggqoog(WZkgOtynyOOi(5jgfc20h0snKlXGcWBLtjmZiQspwe6ZaoVt4kgeIxGd0f83cSRRtKUZ0PtUiLjjNRtYWGcdQDNF(YsWw0nO1xrqg3yFvH2qbhPGEteeOXuqWshE5l77LRm8gCmauC6QTqZkIBV5pd)xV5d5nbAqHBGux3(NWB6P8McFw)7bu6mh78tb8uugR75uDCTKYbxZPMGd7rrTBcNjD3EkANydgxXwNEnU8l5sHbYB4wXiDCWE7ADMvfl6QFfzILxUO1shEXFt3yBRSy8fhE2g8RIDnoIV8OW0UOrhoQZMMwBoe1XrOn15Kf94O2GJuxwkfiZHBVf)XlWsbtP)md0rh6)SegV8kH9yG43n3B1q)85pf0bVZhp6aP)vRiloyvD476Gpmp)t0qrWbegzLaJWacOBjMoSf57gHLui75B82Og3FAoKUwoKMpnupRLa4ghUBYJZJf6caFpfQDNiUocTkL7U1IXbjxioMMXUMjfgpodm2fTOO7KMb)W7CrqH03idNhE1kqibkLbfy0KM5g2Dkw23SzPwOt58Dt(PgZm9wDtCDAJdkpBA(6Vxgr4nXnoIU6EWKb(s(mVlmTkVmGb08DkwghmxEVyJVJdjO14awgVZKFNrFghPr7TRme2WsLrMWiDi7Tp0fDXB9DT0fdn4TTi6YcG(zRghXP5klfGy9FGlJpDnsY)02NFtqJ7KoRVhgxqrUd1BEQmAzhjfJhTQE2moXVDxEH6D0OsKhSCux2MTxuJmLdrBmFWk92VEpo9hFtMDp5gxUop35BQxJZqOfp3jgwECoov9i7XXWdONJ1uGK)4BdDWd4z8aXr2Sy377r3rCVAh(UdHXiaRiTDV9h3OSA9ODOUIgTfw19wGevWP)EGQd)PXx6JBUfLFCaJ)4ag)Xbm()rhWyBHpwpzp35YiFg7I)CZY7ujmJG5)QCuM92x7ihL5f609KNt5RDE6VhNtP7u5N55u(((UqZZP8ZEMrSdKYuMuXrQt4kaQS39Ljl)LRFIDJU6I2RqtDmt9EhBMJVHvA7omTt2DszWjR4ka3WWgKE2APgV2nX20A6u)fVniz21XP(0PeRFsiGlFo5mUHMN9uBi0XCImaGusJ)7z6)1jbPtF8FHPfv4Fqo(B3wvqzWMSlfC4)Fp]] )
+spec:RegisterPack( "Feral Guardian", 20240525, [[Hekili:TRvBVTnos4FlbfiiPBQ3yN40EaX5d7E4w0S3L7aCXTFtsmsu2CTSKafLttHH(TVZqQxOOivCEzb6hkqRJL4mdhoV8mdNeVPEFXBzerq9UB25ZU885ZMpz205ZM5Tu8yo1BzojCdzf8LuYw4Z)fLtsQc(TscpIrsX1FmjJeHIPiRKhc04T8(swI4ZPE3Bv2tNc0Mtd9Ud)2AwuevrkTi0B5FKj(3)Evq9g9p5LSOQGVqs3uf8)4SmotWOfv3wD7xYwTkHwfqI2rsdPav8mbrWYsHVrdZ2ULMgjFUOkGbVuSgOomHuapNLlxycCa4zXSeqTjHQxLlz(EI4Nw8ZBj8n(zX(aR(pWsIoJfV4O7lJJNuaBLV8BL5v3AJxX6mEAHKdxKCpLW9JZ4BhLQ8m5H622vH3vwq9zc62c9x2qy3Bwd(qoyRPr(KWqAcyuXLodzplo2Fvy0IP6mWlt9vp5NWkeNHE9fs1uaUaFsgfvv55Uv5blWXip7O(0u6wW9CZZqMwL3tYEir0Yi89w94iYQv8mD2hAJRU9DvblzPYONVq4ROIodFREbSgZPPFJb2ooDfCYQTDGywtjjI1tYdfxFX525TOKVJTJK4ZsleS0qrHbJx6GXymW3pCnQx(4ciFcPwojRuuWIOF0oNBjLjiXCiFDsyjh0EXnZNBN48YKDuo7Bs)zuMyscjepH0jcw4gW4CCVxcH7HBwCr)xYPBjWX76lDCsiWgq9JzC4d8uHBvbvaMJvftqwfW)9JJp(KiQ0tUL8NzCFcFl8jNgvkf6KOShs3VVHgnPIoClVTrTU60tTRyruydijSVbkIpptzIhQy4kTQgj3PgnqCA61W1AnAU0U7HmwkFJl)IDMOPOx307F9NGGS3zn88XusoacuKZXdTDH2S1YmhRXihvN5k14EiH9dmXCnzWSDceR5KI1hyu0BA88jQtql3Wzy)EJx15XEAZ0Wn56lCNTwJf9FkteSrGIqy3xdCun)VmiPMn)LblvZ9HdnvZWl0DEWWtnNQVlHOQvUVJHPQ1WNpuvnJph4kKLddYQw4ortAYdEGL3fdJuP15ITS1A(EtGdBtigds0v05BE(YRg(ZIP5aHa1qgoa5g(yiyUu4nflM60fSFVviG51iT)krOFnbwCvqAgCfcztJbKu4senDtcpkJm6uUqvB9SvG)1pUK)y)2OLaI8h91iWK3M8fR8vVOjpH4LBsKx14m8dFz)VqoWwapEljkLwiXXRPR)chR8L9EhM2JLpw9yBE3SZn3vRaJ4MN9WX9r9NnGv9kf19P7Sqry91SKzd1eReGy6uakdQ5vSg3vtw4SCj8bl32QfKDaUslOj(tBKb7uwilRSW)EMk4f)P8qEsFt0nluCoPpltG7wLgTF)rfRZktIK5Zpqj7ONo(rS(jBNlYMACXnwx3LPcVYDKngKPun3)XunpeFxnpji9wzIln2kLwA2T5qwdLLqsoH(1qii0N2ArLl1yivxOd2lEibBszvhIuhS6(9MoN6N3s(6hQ)QShP3NaGaPHpEQ3samRa2T2rrm1B5deEkwjXB5N3MNXf4ieMRs7rWb8YMftQU1BP8B4eoAHNGhUto6eAk5(eAK3V0m)aVLwBttnDdiAv9q)BF6TewrajCeVLDTJvfCDvWfN7jaD2yRCs(LN3PhdB3df1fofLroQ2bYS1puox6uo6v0RcUbSPZ7Kfc3JSp3j7wBKi44QGH1vQcwawOHlwJ6RSiD7DBjnubUYPcyR9p5ECcSnpvtGvb73Rtz)wbvQQZ2bLk8vvbNc)tZ8BcfJQ)hFgQpI(zCag0MOPEBRzrDT3zdJkJU5zya54z4tpRyGoHvdeGI4FCGrHGo9jTudv7NOaMEUtjCKruLESiSMbMuNWByqkEjirxWFBtF67js3mD6unWAsYf6KmmOWGA35NVSeSt6o06DlQIBS3XyBOGJuWPhiiqTQGOHoSYx13kxAyneyaym8ArlUDdXTZr1W(1ZFOMRQbfs3HwJCOGB5WXCxneHBFuDWfPBGOOpaLE3vvKyRA7PXCsvLT8vJTVxF1JJ)oyRFM7W4GRQ67DdSTjBs2b(HTta3JJacItxRBplQiH2jRBRgEpHi1v958RhJ1)3lW4fPnui1VyGXlgpYzqf2mwSPW0H)k7wP38P(rZkVAS0F0SYpAw5L3SY4Dj4grZs1dT6PDdfRRFK)(Al6IdSTOlFw988wNN(3rppUtLFM988XX755UPMrSdKYH4uXtQt4kaQS3C5WQmYQpHpv1vJ5K5UrQEe1RO0lyuEJxDsBgCdtFnvWMItTtKdBSqFkBDIqBaE6BN151jd7SpZo5s9N7H0jm78dURs187KcYygEpbaU7eRdRoCDlBUJ9ToYVbiepzNF1tduRpsw(4G3ntgudiSB0HJdA3mQWgOctFZnlAMLK1HgQYTGeVbZKRx90EC2veWQg1nvrxMUrkp0mWrnJh8MNOyGL5p6CRD3mNPfqp9tRV3rUt7GzuoEG4ivk6gHPUHyxtfy3HWyeq9On7571gVPwHdJrCQTI2V9i5lTfw1nUZQGp0(OSd(QG3xfup2ZErss9qcpJxpGuqJ(VPT)9CP(7R6Kp))rgkXlO4TCzjCh20YIcjlE)f]] )
 
 
 spec:RegisterPackSelector( "balance", "Balance (IV)", "|T136096:0|t Balance",

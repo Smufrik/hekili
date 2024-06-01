@@ -133,11 +133,6 @@ paladin:RegisterAuras( {
         aliasMode = "first",
         aliasType = "buff",
     },
-    stat_buff = {
-        alias = { "blessing_of_kings", "mark_of_the_wild" },
-        aliasMode = "first",
-        aliasType = "buff"
-    },
     blessing = {
         alias = { "blessing_of_might", "blessing_of_kings" },
         aliasMode = "first",
@@ -246,22 +241,6 @@ paladin:RegisterAuras( {
         id = 31884,
         duration = 20,
         max_stack = 1
-    },
-    -- Places a Blessing on the friendly target, increasing Strength, Agility, Stamina, and Intellect by 5%, and all magical resistances by 97, for 1 hour.  
-    -- If target is in your party or raid, all party and raid members will be affected. Players may only have one Blessing on them per Paladin at any one time.
-    blessing_of_kings = {
-        id = 20217,
-        duration = 3600,
-        max_stack = 1,
-        shared = "player"
-    },
-    -- Places a Blessing on the friendly target, increasing melee attack power by 20%, increasing ranged attack power by 10%, and restoring 0 mana every 5 seconds for 1 hour.  
-    -- If target is in your party or raid, all party and raid members will be affected. Players may only have one Blessing on them per Paladin at any one time.
-    blessing_of_might = {
-        id = 19740,
-        duration = 3600,
-        max_stack = 1,
-        shared = "player"
     },
     -- Gaining 12% of total mana. Healing spells reduced by 50%.
     divine_plea = {
@@ -651,20 +630,6 @@ paladin:RegisterAuras( {
         duration = 10,
         max_stack = 1
     },
-    -- Attack speed slowed.
-    judgements_of_the_just = {
-        id = 68055,
-        duration = 20,
-        max_stack = 1
-    },
-    -- Physical damage done reduced by 10%.
-    vindication = {
-        id = 26017,
-        duration = 10,
-        max_stack = 1,
-        shared = "target"
-    },
-
     -- Retribution Debuffs
 
     -- Incapacitated.
