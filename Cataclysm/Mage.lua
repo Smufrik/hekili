@@ -601,8 +601,8 @@ spec:RegisterAuras( {
 },
     water_elemental = {
         duration = function()
-            if glyph.eternal_water.enabled then return 3600 end
-            return 45 + ( 5 * talent.enduring_winter.rank )
+            if glyph.eternal_water.enabled then return 36000 end
+            return 36000
         end,
         max_stack = 1,
     },
@@ -1728,6 +1728,13 @@ spec:RegisterAbilities( {
             setCooldown("ice_block", 0)
             setCooldown("icy_veins", 0)
             setCooldown("summon_water_elemental", 0)
+			setCooldown("deep_freeze", 0)
+			setCooldown("flame_orb", 0)
+			setCooldown("frost_nova", 0)
+			setCooldown("cone_of_cold", 0)
+			setCooldown("ice_nova", 0)
+			setCooldown("ice_barrier", 0)
+			
         end,
     },
 
@@ -2082,6 +2089,34 @@ spec:RegisterAbilities( {
         end,
 
       },
+	  
+	  
+	freeze = {
+		id = 33395,
+		cast = 0,
+		cooldown = 25,
+		gcd = "off",
+		
+		spend = 0,
+		spendType = "mana",
+		
+		startsCombat = true,
+		
+		usable = function()
+			return pet.exists, "requires water elemental"
+		end,
+		
+		handler = function()
+			if buff.fingers_of_frost.up then 
+				addStack( "fingers_of_frost" )
+			else
+				addStack( "fingers_of_frost", 2 )
+			end
+			if target[ "within" .. ( 10 ) ] then
+                applyDebuff( "target", "frost_nova" )
+            end
+		end,
+    },
 
     -- Increases Armor by $s1.  If an enemy strikes the caster, they may have their movement slowed by $6136s1% and the time between their attacks increased by $6136s2% for $6136d.  Only one type of Armor spell can be active on the Mage at any time.  Lasts $d.
     frost_armor = {
@@ -2204,6 +2239,7 @@ spec:RegisterAbilities( {
 
         handler = function()
             if buff.fireball_proc.up then removeBuff( "fireball_proc" )
+			elseif buff.brain_freeze.up then removeBuff( "brain_freeze" )
             elseif buff.presence_of_mind.up then removeBuff( "presence_of_mind" ) end
             if buff.fingers_of_frost.up then removeStack( "fingers_of_frost" ) end
         end,
@@ -2311,7 +2347,7 @@ spec:RegisterAbilities( {
         velocity = 38,
 
         handler = function()
-         end,
+        end,
 
         impact = function()
             if buff.fingers_of_frost.up then removeBuff( "fingers_of_frost" )
@@ -2758,7 +2794,7 @@ spec:RegisterAbilities( {
         startsCombat = false,
 
         handler = function()
-            summonPet( "water_elemental", spec.auras.water_elemental.duration )
+            summonPet( "water_elemental", 36000 )
             applyBuff( "water_elemental" )
 
         end,
@@ -2767,7 +2803,7 @@ spec:RegisterAbilities( {
 } )
 
 spec:RegisterStateExpr( "is_fs_down", function() return fs_down end )
-
+spec:RegisterPet( "water_elemental", 510659, "MAGE_FROST", "pet" )
 
 spec:RegisterOptions( {
     enabled = true,
@@ -2861,3 +2897,4 @@ spec:RegisterPackSelector( "frost", "Frost Wowhead", "|T135846:0|t Frost",
 -- spec:RegisterPack( "Frost Wowhead", 20230930, [[Hekili:fJ1FpsTnq0plOkT3Du2S)4G7a0DivkQTGApv1qf9VsI3Kj76Eo2bBNBzpDkF27yNnjoztwOuHQqcYAp(nppEM5ztWIG3h4Nq0qWnlNV885V485ElE6Y5p95b(6D5qGFoj(wYA8dojd)7Fsku6YOpi2UbijMP3Xe4himkrHmgnzJwNRE5SzB3U1BBLDEXISzBfA2TZwxqtGzXmIsbQzzi0Zsnyoljxnvk0envWNgleSeXwUAkzfLr1uqnn)oe8vfuM(T8Gvdt7lrAKdXb3G8FdnjbQSeuXb()g6RxwgvTdENllPX7MEhq5QwEo1YqACf5MA45uddrsCuww(oFixdzRazzKHByisksPmK7FxzuxoGd8nJgi29ys57WrXH)DjG4VIGeGeBaq5Lxp03F9mImMWHWvskJrj8y4j00RLeAYKvfPPEhmTNX1hfkkxdmgeRni9OphuDMRzPhXlXc(FxiHWmcNeUgYmEP(7W4ne5AqD1YHxBMGPbEirMjKM1z9DbN(XcOAWJ4xvrwMGhUftdLHadYaUMWS7XCq7zwYDWK1SD5B8a0goHvzShWjRyqYWWMkIlu4Mznn2G1APOiFsfyHjcTNZ8xpFyiY3jfRWehBaFLqPQp6FdKskyTh82OxbgJLyvdJ5oUDaLgWDeJINeXjx3ouyDkxfS)yDcOlazuPuidPMC2oapEy7ljwHiG1jH26e3b3NWKl2I57oJNYW(wHXKC3bZfMVEsHccfPPHRXn3IUbfwsOItYn0YyvZavzNnmOkJToA4mUeYi4)(QlMBlf)tfugr47kJ0sk)wqRWV2GLGrejWpb)xHEdi3sn2z6GrtPqINlNm0GI1ZQwaFda5MMjaCp(lTOmcRfW4l(JDyZ4YitoaAaLVgpHrFKw36jQQUa9fndtiWiNOqXq6TLQ3GKAVDRWYdCzY9)mLkXL8ACWomlbPryQLfM41PjGniHTSUh4Ef5p8q1VRObgXdTDZ8uAuB56fNn50kS8sRDsOXXEuEykJUEJ(HhCnO7CN15WUE(MA5dCkwmHPByoNNdTBpbDgS(m8QymkgQPzWJpY(4aA0SpA4YkS1hVfC0E3fTIrV)EImXy((YDGdzyZ8xTCYJYe3HUTBok3K9AtnhCnAZjS2ZCIs5lMp5qi2xZaFkNjuMcIVoyQ2P19BQMV7YwoVZofW4PTd9NRo0mrtB9owv3K3lpwF1LDGhUteBfg7yZ5ZhmrjW)o8SehT9Meb(BjsoUhub(F4h(JBE7n)mkzxg9(nyYpnlxiXAIutrXjjv9tpPmscFSaddjyfLWu)rk0ImSbwITudtyuyjZVInslJwS8LMwMC0X25pzF(4FDsvnCZVR79HJF6IpDMNPl(BT(3SSLOtS7hSmNQ0g8d8r3Urid8)f4w8Mab(2zS3XRIP4N3yVZx1sd8DB)h4V3HbVoqJXdJDTJ0SKwzad(wPb3bB0gmyCURVCve65RN2ZxXsSvNKsc8Fuz0rKfCy1GYkgSFMlhA6q3Jax4AKRwsp7U01UgTLEg9CJroPRMyEZIQY57TIxm6(VJ6tz0KYObuGSJpUkuz0RkJUyU7P(Ean(EX8Eo3CDzjnVY0VsLRwF1OBz91IrsQC67oeb(FuPZ9W40YO(IBLrp8W(ZKregIUgR5lJoZEiDADv7OIDvaoUGhIKns2V8SLLJj8zjWHIFnxXQts0acHLrxHgulgwg94JUVDktAA2A495hN3hks2dOMqMfTXBC0viZwcS0UfXokvAuTaxR9AH8z)7HSNgPDS((WvV26Nl(24N(I6wFD5O(AVC(bOV0PDrRaVfSJ2ERV4EVgDlgVtxTuTnn7sh3lHCmNLQ2yX9axBKQ63cBeup3b1MRjybOJOOZTdCjV28w(9VYQriDGEzh8U2ED0o4)HGw2AECCBt(HFG8qAZD0l)sa5G57(s7d2mnt3OQpA029D32O(YofbDER(X1(h(14oxOW517nk9JfvAFtUDV)F8sfJx8AFWU1f7lJ79ODREGBXv7unxWy4Ob(qENRru)g)G2)e8pd]] )
 spec:RegisterPack( "Fire Experimental", 20240726, [[Hekili:1E1oVnooq4FlPXfBHGLCESbiRloG7qUM0OTMuus0wCdFiqsLe3OF73qs5yAh9i7ICf2qIC484Bg(nJqPOFIYRjwk6PS1zxV(USBts3S5(nOC7HwkkVLu9mzp8GKiG))hMM2x83V1s1mbvAjCNih4ksTttgvNUcedLx2X42)vIkpt93MEpiulTc903r5nS6AAqeQPcL)ZgMPVW9J0xmy4(c1o49kltj7l4mJf2ENs3x8i9zgNLGY9l6TEJsBX1DAItAmrrHvFYhIujPKtRr)fkpOlu(ooeryLUezbV7OK2rLTKtmw8RKxOoH3mVW1AYEL0Gl1uITXDGRN)aEpXy1SN9Q)MfKgsbyVdHYR0mlKjio8E3UeMaqnBsxBFXQ(IAAyX9sqiyrqFwhuVJ0XThTXmgYCqsAnuSPvZK7nXwZcj)(IT9f39japnTLtLmtdwqKKy14EpPTY2x8qFX9R9EDLsusS(hF3kz3mfSxEYmcf3sHSUwO0JzKTz3SYPrSvHRz0TPRxDLhGIpyaMMkHDsPTAAnRYsRXo)TZekp3gC)WR4xz2gyBfVw9QeQA)geij34JSgIbx1OW7jCooKNofiNuXNOAGZEbso4s4mX(3igyaDdUtYjJCSC5QH6LinoGg3oVliGRPWDdD9coGtv3TeWolY0EqRcv(whbYSEvekE51KsUsvZHnpg6)HzZ0HSzOo9HFaR4VpC)sb5xNxeFlbm(e1qPR)cWkNfN3pfmjt0jIw(BtbrPlW98)Mh9biZ5mlqGDQtrKV428fkMkPcgfYeBHyBJxBl0EiQxYNsDl084IUnXK0e9EQnXvYWKPb21PnZFuxNbkJZitwDUn2M6v)eCixKBBuwm0iKsEob(RYoXv)0jOrgNu8qfhi99GHXDkGW6n85RMpsqfZd6Q0ogx1kB8EpeGVjyJgTbneIDYP6sptAASKHZ2tW38Phyym)5J9h(GpbxFCMpBbYLrV9C1LnIgA1KTaVGVxZhAXVJTVXI1ubHjhqRSq9(ztya0GotmXT9WJyHYLAVe)kH2rJp5YwVEZho2tbtSafGPsPR8tgMT0OHNLPZIVK(crJddLh1FOHYHrZJ90OnnuR1nj3GujC1RWyNhjhFF6RjKUba5FdXb(nTlznisygFnRDG1s1xivGscX8PagIkMFf)WQaXEyEq0YJRwPK)QdqlxQbVNkUOCZRLHHv)DgFm6OlKvfmTwPXmH)7LgvdlKTprYn6X9qcaRgNWrFqfm7LmmHoOQoBJlaEKWRbkuHYFk0)9]] )
 spec:RegisterPack( "Arcane Experimental WoW Sims", 20240622, [[Hekili:Ds1xVTniq8pl7L9ONTttAJ02K2KMu3l5fQuFdZz7ZnOGbla3SkvXN9DqtAsAtYYAKcg7d(9N7GJxWVJZAbpYxuMxEv(SYRZYlNKNpLZ8pnGC2a0ScEGMOHEA8h2gqJbXV(ZaAL9O2dQG4EZ9bbt27IR)jLbAJ46mJ2gApCw9Ou5)TMx)gYkPfnGn8f3WzlLTT4llbDnC2DlLUGi(hcInQiimD07nEPrhekPZtH7m2G4wCLujZ4S0htUc7GrLNMUOy7GNZqnuRWw(p5SxWHEM8u1GznA5SgR0twdIiup21LTjCTcC(mNNusq89Gysqeep)Cq4P0qL3u1kj991GOmN4zr555SgTo0UsQFyFg3NVKCYghcIphePa1kJPvnsQO1SwFoYNetahHvloOqT0TSQh0WfXCCHzdn(e6ZNgr)QZBn8rtd8Y0D4)PtsWboGYRLtFpVtsUA6fvgt1P)L1IWn7JbxsynJwlD2pi(cjo6xs5h4KdSafSizHRpoN7qVXyuXQB2RzXml2dsTlLikMEcb6J3H(4(zRkNNu58ZJuNIAfuzS17dtCFKhVej0lDoPcDNQiTn(M6uXLD9TgS2uJQ)JlWhEo7BbXnPd4f7F5945VD6iM7zdwSX0xdV2U5ycTNKxfy7n2358DHoOCpz2L0l5nhesc6rQ)sm4EDAxdwn1VXfBidJ(LrzClOATi0Bs7I)3d]])
+spec:RegisterPack( "Dubu's Updated Frost", 20250101, [[Hekili:fJvBVTTnq4FlTFWPPRqts51oehG1w0Hg0Lnm3IUpjjAjkBUkrQssf3ueOF77i1BKYsYbTdyOfjuK39ChV3dd8c(qWQeKehCRVR)zUEEx6475E(zxgSsEFboyvbk(ZOnWckkh(5BkxxEKOk6JfkUsQIElNjKkYUpJHsuWjyL8yG03Z2iErvuoWDvucreZ4jW3sSqsOBGvpvqYfpny16ssM8D0G12QIRhGvboo4wqz2sssW1KGfXbR(Da1FPr6v3CdIwfP4cueolLKbI)p54yw(AeCmkwsyuHtr7w)0YFgXJruC4AojlJGOX4xqsxYrKKfRlttD27yNe2o6SqrOsCwgowQq6jhckRZ6yDgPeZO)tjhhMJOOWn4CLuAxhgVfX3Gfx5poV5SmjMgI45mUIpTSlPKVuIR3Cg5kkZZz0WDGNHhIZW5yQeLPVJfyPJIL7Wl2KDFXwhmqdfLvtSdMIwNbXiJcBklUuaxMnKyfwB4SYIf1GfMWKogNV0DIBfHZz8qIocBCHOcpwdx(QBQU5n4uuzwF4G2MwcwEoeLLLzUVEdHed3Zmc4FItw2VvymJLvBVEDZkHjZJQwZBiFmwpabs89H3Hj2IRjeQGTdZn3pndsydJrfMBwWuRErPahYstd3axmpBdswsOGIkuQLIQUnQJx70G6y4wlHX(CCoc(91NdoTpkGmFe9EiPNtOFglHchYTqgzeIJPhb)Mj3I57ik6uP6KucoXXuHu6arIZfnO9gmUqL2JXFd(sYQIG8cWYcFCpu3PkkdbfeIEluHb8RGasBlsevNJacIKdHbGnJvkYaDBhrUf0Og60rlrmEZNPeoWYRGnTuRuTc0LkLwloWMgQd5CesOS5s3EducO3H1C1yIawUcS)o5OV(CVAR7AOObTLkRmsqKgiCa5ETTpLeJdZARWnhBFxCT0BXZM5wkUU7q79p(HhMLVRMGV5mPIRV449tby812UUg3AOYv3D7SS9CmqVjtRZiF7BiO)fqEtrkmfNtWqG(INKZUdSn25ruvgMo9zeE8xivXIshvShH65UyFiAYRXFTiJjujTFFWuFtvzf6gg6ZTzZ316McTNR7XCOAfCCrgMseB1K32oYPiwE1fUJvUWKz8DSyKS5A1X3jU75PuoPGv3bbEWUMJgSdXv5qIGvF6x)RBF3T)gmoqv0h2cPRK8cghYItvPXhLux3)OQio(lLG5aMArWuvmqLswE9ymqXbi6waj5Vhk4xf55dW9AgfeS(8JGs1q9AN)(O6QoDF3wNg2)zEF9yhvNM3PLVInFqi67duyIiKk8dwPxPh8QwZGL3QheRbk1uoXCOQhNGcw9KQO((SbRQHdMmA0UjbsWePGQLmZoCMcaO7etr(kdK760PuvD3pZn7A)PW4utzz24ZezGUZmPRlQyarNBsKzBTb0DHjDDT5gq0LkImIDvM4oMQdThWXlhyp6DbJflhTq16zQ2FvrxxfbTaTOQRCKfvdiAKQA1Kz6tB6jR0Ap3bQTA(yoPOM0VZoW9YQR)RwwETHQYrJCQv79SCJ34OkA5J7YFvvutFYQONdzMAwgVFPwj9pOb5)XHiE0gNRbRJreRHLrFjpzEprx37hV8uItH8P)xJ8YwF2Z0))Gr6t04Vk64QOhE4rGXvZGXbJ2af4cTOowBnoBY6YJFNll0YOP7GPeANN)WQGs)HaWqjrfr(8MG9XnVMjFTDlv695gEr7sLq9Nbf(8Uy(kF7pA0aP2nnLgTlNen7XxQRrQThqpU6jt6bUDIlnKtxAEei9B8awtgP3BOmmNst350DsV9pKCgokNwwt3XVziU9q33Ohq)yDAW8NRB3Wr6g4(9pzmMhj13EGplnUzaoDS7fU9vOTBAQL2Pt6lTq5KPrPtH6gIudS1mggZoAEzvVuv77dS3yxd7vScxaD(wd)z1Q3w6etvv96o9634VWZE()(Z7gtBu7aKn8yWFVZTFfP9eF3XJn83pW8MZ7qnFEkTJ13k)Z6jT6MuC6Ar79Ov9Oz(ixDJtoks6hBsB(AsRh8Gt1JMyem1Fu78NdRToZSVtxpCII3VSh)6)TAnsGt(dGUMPq(eB3wmcglh(ly2c3w9ZYQjn4F)d]])
