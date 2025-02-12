@@ -46,26 +46,49 @@ spec:RegisterGear( "tier11feral", 60290, 60286, 60288, 60287, 60289, 65189, 6519
 --- Balance
 
 local function rage_amount()
-    local d = UnitDamage( "player" ) * 0.7
-    local c = ( state.level > 70 and 1.4139 or 1 ) * ( 0.0091107836 * ( state.level ^ 2 ) + 3.225598133 * state.level + 4.2652911 )
-    local f = 3.5
-    local s = 2.5
+    --local d = UnitDamage( "player" ) * 0.7
+    --local c = ( state.level > 70 and 1.4139 or 1 ) * ( 0.0091107836 * ( state.level ^ 2 ) + 3.225598133 * state.level + 4.2652911 )
+    --local f = 3.5
+    --local s = 2.5
+--
+    --return min( ( 15 * d ) / ( 4 * c ) + ( f * s * 0.5 ), 15 * d / c )
+    local hit_factor = 6.5
+    local speed = 2.5 -- fixed for bear
+    local rage_multiplier = 1
 
-    return min( ( 15 * d ) / ( 4 * c ) + ( f * s * 0.5 ), 15 * d / c )
+    return hit_factor * speed * rage_multiplier
+
 end
 
-local function calculate_damage( coefficient, flatdmg, weaponBased, masteryFlag, armorFlag, critChanceMult )
+-- Generic function to calculate the total damage for an ability
+-- Parameters:
+-- flatdmg: The base damage or pre-calculated damage of the ability with AP/WeaponDPS
+-- coefficient: The scaling coefficient for the damage source, if AP is already calculated use 0 to avoid double counting
+-- weaponBased: Boolean indicating if the damage is based on weapon DPS, if false it is based on attack power
+-- masteryFlag: Boolean indicating if mastery affects the ability, for feral only apply for bleed damage
+-- armorFlag: Boolean indicating if armor reduction should be applied. Armor reduces physical damage
+-- talentAndBuffModifiers: Combined modifiers from talents and buffs
+-- critChanceMult: Extra multiplier for critical chance, use nil as default
+-- Returns: The total damage after applying all modifiers
+local function calculate_damage(flatdmg, coefficient, weaponBased, masteryFlag, armorFlag, talentAndBuffModifiers, critChanceMult)
     local feralAura = 1
-    local razorClawsMultiplier = state.talent.mangle.enabled --Use MasterySpell(Mangle) as trigger, since razorClaws is neither talent nor ability?
-    local boss_armor = 10643*(1-0.2*(state.debuff.major_armor_reduction.up and 1 or 0))*(1-0.2*(state.debuff.shattering_throw.up and 1 or 0))
-    local armor_coeff = (1 - boss_armor/15232.5) -- no more armor_pen
-    local armor = armorFlag and armor_coeff or 1
-    local crit = min( ( 1 + state.stat.crit * 0.01 * ( critChanceMult or 1 ) ), 2 )
-    --local vers = 1 + state.stat.versatility_atk_mod
-    local mastery = masteryFlag and razorClawsMultiplier and ( 1.25 + state.stat.mastery_value * 0.03125 ) or 1
-    local tf = state.buff.tigers_fury.up and class.auras.tigers_fury.multiplier or 1
+    local armor = 1
+    local mastery = 1
 
-    return (coefficient * ((weaponBased and state.stat.weapon_dps) or state.stat.attack_power) + flatdmg) * crit * mastery * feralAura * armor * tf
+    if armorFlag then
+        local boss_armor = 10643 * (1 - 0.2*(state.debuff.major_armor_reduction.up and 1 or 0)) * (1 - 0.2 * (state.debuff.shattering_throw.up and 1 or 0))
+        local armor_coeff = (1 - boss_armor/15232.5) -- no more armor_pen
+        local armor = armorFlag and armor_coeff or 1
+    end
+    if masteryFlag then
+        mastery = state.talent.mangle.enabled and (1.25 + state.stat.mastery_value * 0.03125) or 1 -- razorClawsMultiplier
+    end
+
+    local crit = math.min((1 + state.stat.crit*0.01*(critChanceMult or 1)), 2)
+    local tf = state.buff.tigers_fury.up and class.auras.tigers_fury.multiplier or 1
+    local sourceDamageValue = (weaponBased and state.stat.weapon_dps) or state.stat.attack_power
+
+    return (flatdmg + coefficient*sourceDamageValue) * crit * mastery * feralAura * armor * tf * talentAndBuffModifiers
 end
 
 -- Force reset when Combo Points change, even if recommendations are in progress.
@@ -249,9 +272,20 @@ spec:RegisterStateTable( "rip_tracker", setmetatable( {
     end
 }))
 
-spec:RegisterStateExpr("rend_and_tear_mod", function()
+-- This function calculates the "Rend and Tear" damage modifier for the Shred/Maul ability when it is applied to a bleeding target.
+spec:RegisterStateExpr("rend_and_tear_mod_shred", function()
     local mod_list = {1.07, 1.13, 1.2}
-    if talent.rend_and_tear.rank == 0 then
+    if not debuff.bleed.up or talent.rend_and_tear.rank == 0 then
+        return 1
+    else
+        return mod_list[talent.rend_and_tear.rank]
+    end
+end)
+
+-- This function calculates the "Rend and Tear" critical modifier for the Ferocious Bite ability when it is applied to a bleeding target.
+spec:RegisterStateExpr("rend_and_tear_mod_bite", function()
+    local mod_list = {1.08, 1.17, 1.25}
+    if not debuff.bleed.up or talent.rend_and_tear.rank == 0 then
         return 1
     else
         return mod_list[talent.rend_and_tear.rank]
@@ -330,12 +364,6 @@ spec:RegisterStateExpr("rip_maxremains", function()
     end
 end)
 
-spec:RegisterStateExpr("sr_new_duration", function()
-    if combo_points.current == 0 then
-        return 0
-    end
-    return 14 + (set_bonus.tier8feral_4pc == 1 and 8 or 0) + ((combo_points.current - 1) * 5)
-end)
 
 spec:RegisterStateExpr( "mainhand_remains", function()
     local next_swing, real_swing, pseudo_swing = 0, 0, 0
@@ -401,7 +429,7 @@ end)
 spec:RegisterStateExpr("bite_now", function()
     local bite_now =  (bite_before_rip or bite_at_end) and not buff.clearcasting.up
     -- Ignore minimum CP enforcement during Execute phase if Rip is about to fall off
-    local emergency_bite_now = is_execute_phase and debuff.rip.up and (debuff.rip.remains < debuff.rip.tick_time) and (combo_points.current >= 1)
+    local emergency_bite_now = is_execute_phase and debuff.rip.up and (debuff.rip.remains < debuff.rip.tick_time) and (combo_points.current >= 1) and talent.blood_in_the_water.rank == 2
 
     return bite_now or emergency_bite_now
 end)
@@ -549,9 +577,12 @@ spec:RegisterStateExpr("rip_refresh_time", function()
     return calc_rip_refresh_time
 end)
 
+--- Return the time at which Rip should be refreshed.
 spec:RegisterStateExpr("calc_rip_refresh_time", function()
+    local reaction_time = latency -- TODO: This appears to always be 0.1, a very low value, in order to clip the rip with TF the addon has a 0.2s window to perform this query before TF drops and then the user must react in the remaining time.
+    local now = query_time
     if not debuff.rip.up then
-        return query_time - latency
+        return query_time - reaction_time
     end
 
     -- If we're not gaining a new Tiger's Fury snapshot, then use the standard 1 tick refresh window
@@ -564,18 +595,20 @@ spec:RegisterStateExpr("calc_rip_refresh_time", function()
     -- Likewise, if the existing TF buff will still be up at the start of the normal window, then don't clip unnecessarily
     local tf_end = buff.tigers_fury.expires
 
-    if tf_end > standard_refresh_time + latency then
+    if tf_end > standard_refresh_time + reaction_time then
         return standard_refresh_time
     end
 
     -- Potential clips for a TF snapshot should be done as late as possible
-    local latest_possible_snapshot = tf_end - latency * 2
+    local latest_possible_snapshot = tf_end - reaction_time * 2 
 
     -- Determine if an early clip would cost us an extra Rip cast over the course of the fight
-    local max_rip_dur = debuff.rip.duration
-    local final_possible_rip_cast = (talent.blood_in_the_water == 2 and target.time_to_25 - latency) or (target.time_to_die - cached_rip_end_thresh)
-    local min_rips_possible = (final_possible_rip_cast - standard_refresh_time) / max_rip_dur
-    local projected_rip_casts = (final_possible_rip_cast - latest_possible_snapshot) / max_rip_dur
+    local max_rip_dur = aura.rip.duration + (glyph.bloodletting.enabled and 6 or 0)
+    local ttd_absolute = ttd + now -- Note that standard_refresh_time and latest_possible_snapshot are absolute time units, not intervals of time.
+
+    local final_possible_rip_cast = ttd_absolute - cached_rip_end_thresh -- TODO: ingore execution fase for now '(talent.blood_in_the_water.rank == 2 and target.time_to_25 - reaction_time) or ', target.time_to_25 does not exist
+    local min_rips_possible = math.floor((final_possible_rip_cast - standard_refresh_time) / max_rip_dur)
+    local projected_rip_casts = math.floor((final_possible_rip_cast - latest_possible_snapshot) / max_rip_dur)
 
     -- If the clip is free, then always allow it
     if projected_rip_casts == min_rips_possible then
@@ -584,7 +617,7 @@ spec:RegisterStateExpr("calc_rip_refresh_time", function()
 
     -- If the clip costs us a Rip cast (30 Energy), then we need to determine whether the damage gain is worth the spend.
     -- First calculate the maximum number of buffed Rip ticks we can get out before the fight ends.
-    local buffed_tick_count = min(aura.rip.duration/aura.rip.tick_time + 1, floor((target.time_to_die - latest_possible_snapshot) / debuff.rip.tick_time))
+    local buffed_tick_count = min(max_rip_dur/aura.rip.tick_time + 1, (ttd_absolute - latest_possible_snapshot) / aura.rip.tick_time)
 
     -- Subtract out any ticks that would already be buffed by an existing snapshot
     if rip_tf_snapshot then
@@ -592,10 +625,11 @@ spec:RegisterStateExpr("calc_rip_refresh_time", function()
     end
 
     -- Perform a DPE comparison vs. Shred
-    local expected_damage_gain = action.rip.tick_damage * (1.0 - 1.0 / 1.15) * buffed_tick_count --TODO: check if TF is already applied in damage calc
+    local tick_dmg = calc_rip_tick_damage
+    local expected_damage_gain = tick_dmg * (1.0 - 1.0/1.15) * buffed_tick_count
     local energy_equivalent = expected_damage_gain / action.shred.damage * action.shred.cost
 
-    Hekili:Debug("Rip TF snapshot is worth %.1f Energy", energy_equivalent)
+    Hekili:Debug("Rip TF snapshot is worth %.1f Energy, DMG gain %.1f, ticks %.1f, dmg: %.1f", energy_equivalent, expected_damage_gain, buffed_tick_count, tick_dmg)
 
     return (energy_equivalent > action.rip.cost) and latest_possible_snapshot or standard_refresh_time
 end)
@@ -648,13 +682,52 @@ end)
 
 
 spec:RegisterStateExpr("calc_rake_dpe", function()
-    local rake_dpe = action.rake.damage + action.rake.tick_damage*(math.floor(min(aura.rake.duration,ttd)/aura.rake.tick_time))/action.rake.cost
-    return rake_dpe
+    local rake_dmg = action.rake.damage + action.rake.tick_damage*(math.floor(min(aura.rake.duration,ttd)/aura.rake.tick_time))
+    return rake_dmg / action.rake.cost
 end)
 
 spec:RegisterStateExpr("calc_shred_dpe", function()
     local shred_dpe = action.shred.damage/action.shred.cost
     return shred_dpe
+end)
+
+
+spec:RegisterStateExpr("calc_bite_dpe", function()
+    local avg_base_damage = 377.877920772
+    local scaling_per_combo_point = 0.125
+    local dmg_per_combo_point = 576.189844175
+    local cp = combo_points.current
+
+    local base_cost = (buff.clearcasting.up and 0) or (25 * ((buff.berserk.up and 0.5) or 1))
+    local excess_energy = min(25, energy.current - base_cost) or 0
+
+    local bonus_crit = rend_and_tear_mod_shred
+    local damage_multiplier = (1 + talent.feral_aggression.rank*0.05) * (1 + excess_energy/25)
+
+    local bite_damage = avg_base_damage + cp*(dmg_per_combo_point + state.stat.attack_power*scaling_per_combo_point)
+
+    bite_damage = calculate_damage(bite_damage, 0, false, false, true, damage_multiplier, bonus_crit) 
+    Hekili:Debug("bite_damage (%.2f), excess_energy (%d)", bite_damage, excess_energy)
+
+    local bite_dpe = bite_damage / (base_cost + excess_energy) -- TODO: check if this should include excess energy
+
+    return bite_dpe
+end)
+
+spec:RegisterStateExpr("calc_rip_tick_damage", function() -- TODO move this to an action?
+    local base_damage = 56
+    local combo_point_coeff = 161
+    local attack_power_coeff = 0.0207
+    local cp = combo_points.current
+
+    local damage_multiplier = (glyph.rip.enabled and 1.15 or 1) * (debuff.mangle.up and 1.3 or 1)
+    local flat_damage = base_damage + cp*(combo_point_coeff + state.stat.attack_power*attack_power_coeff)
+
+    local tick_damage = calculate_damage(flat_damage, 0, false, true, false, damage_multiplier)
+
+    Hekili:Debug("Rip tick damage (%.2f)", tick_damage)
+
+    return tick_damage
 end)
 
 local cachedRipEndThresh = 10 -- placeholder until first calc
@@ -668,13 +741,13 @@ spec:RegisterStateExpr("calc_rip_end_thresh", function()
     end
     
     --Calculate the minimum DoT duration at which a Rip cast will provide higher DPE than a Bite cast
-    expected_bite_dpe = 1 --TODO:FIXME
-    expected_rip_tick_dpe = 1 --TODO:FIXME
-    num_ticks_to_break_even = 1 + floor(expected_bite_dpe/expected_rip_tick_dpe)
+    local expected_bite_dpe = calc_bite_dpe
+    local expected_rip_tick_dpe = calc_rip_tick_damage/action.rip.cost
+    local num_ticks_to_break_even = 1 + math.floor(expected_bite_dpe/expected_rip_tick_dpe)
 
     Hekili:Debug("Bite Break-Even Point = %d Rip ticks", num_ticks_to_break_even)
 
-    end_thresh = num_ticks_to_break_even * aura.rip.tick_time
+    local end_thresh = num_ticks_to_break_even * aura.rip.tick_time
 
     --Store the result so we can keep using it even when not at 5 CP
     cachedRipEndThresh = end_thresh
@@ -684,7 +757,59 @@ spec:RegisterStateExpr("calc_rip_end_thresh", function()
 end)
 
 spec:RegisterStateExpr("clip_roar", function()
-    return false --TODO: replace with real logic 
+    local local_ttd = ttd
+    local rip_max_remains = rip_maxremains
+    local roar_remains = buff.savage_roar.remains
+    local combo_point = combo_points.current
+
+    if combo_point == 0 then
+        return false
+    end
+
+    if not debuff.rip.up or (local_ttd - debuff.rip.remains < cached_rip_end_thresh) then
+        return false
+    end
+    
+    -- Calculate with projected Rip end time assuming full Glyph of Shred extensions
+    if (roar_remains > rip_max_remains + settings.rip_leeway) then
+        return false
+    end
+    
+    if (roar_remains >= local_ttd) then
+        return false
+    end
+    
+    -- Calculate when roar would end if casted now
+    -- Calculate roar duration since aura.savage_roar.duration gives wrong values
+    local new_roar_dur = 9 + (combo_points.current*5) + (talent.endless_carnage.rank * 4)
+    Hekili:Debug("Roar duration: (%.1f VS %.1f) CP: (%.1f)", new_roar_dur, aura.savage_roar.duration, combo_points.current)
+    
+    
+    --If a fresh Roar cast now would cover us to end of fight, then clip now for maximum CP efficiency.
+    if new_roar_dur >= local_ttd then
+        return true
+    end
+    
+    --If waiting another GCD to build an additional CP would lower our total Roar casts for the fight, then force a wait.    
+    if new_roar_dur + 1 + (combo_points.current < 5 and 5 or 0) >= local_ttd then
+        return false
+    end
+    
+    -- Clip as soon as we have enough CPs for the new roar to expire well after the current rip
+    if not is_execute_phase then
+        return new_roar_dur >= (rip_max_remains + settings.min_roar_offset)
+    end
+    
+    -- Under Execute conditions, ignore the offset rule and instead optimize for as few Roar casts as possible
+    if combo_point < 5 then
+        return false
+    end
+    
+    local min_roars_possible = math.floor((local_ttd - roar_remains) / new_duration)
+    local projected_roar_casts = math.floor(local_ttd / new_duration)
+    Hekili:Debug("Roar execution: min (%.1f) VS projected (%.1f)", min_roars_possible, projected_roar_casts)
+        
+    return projected_roar_casts == min_roars_possible
 end)
 
 spec:RegisterStateFunction("tf_expected_before", function(current_time, future_time)
@@ -699,11 +824,11 @@ end)
 
 
 spec:RegisterStateFunction("berserk_expected_at", function(current_time, future_time)
+    if not talent.berserk.enabled then
+        return false
+    end
     if buff.berserk.up then
-        return (
-            (future_time < current_time + buff.berserk.remains)
-            or (future_time > current_time + cooldown.berserk.remains)
-        )
+        return future_time < current_time + buff.berserk.remains
     end
     if cooldown.berserk.remains > 0 then
         return (future_time > current_time + cooldown.berserk.remains)
@@ -712,7 +837,7 @@ spec:RegisterStateFunction("berserk_expected_at", function(current_time, future_
         return (future_time > current_time + buff.tigers_fury.remains)
     end
 
-    return false
+    return tf_expected_before(current_time, future_time)
 end)
 
 
@@ -728,6 +853,7 @@ spec:RegisterStateExpr("roar_refresh_pending", function()
     return buff.savage_roar.up and (buff.savage_roar.remains < ttd - latency) and combo_points.current >= 1
 end)
 
+--- Calculates and returns a table of pending actions with their respective refresh times and costs.
 spec:RegisterStateExpr("pending_actions", function()
     local pending_actions = {
         mangle_cat = {
@@ -793,21 +919,34 @@ spec:RegisterStateExpr("pending_actions", function()
     return pending_actions
 end)
 
-spec:RegisterStateExpr("sorted_actions", function()
-    local sorted_actions = {}
-    for entry in pairs(pending_actions) do
-        table.insert(sorted_actions, entry)
+--- This function sorts pending actions based on their refresh times.
+-- Actions with a refresh time of 0 are placed at the end of the list.
+spec:RegisterStateFunction("sorted_actions", function(pending_actions_map)
+    Hekili:Debug("sorted_actions called")
+    local sorted_action_list = {}
+    for entry in pairs(pending_actions_map) do
+        table.insert(sorted_action_list, entry)
     end
 
-    table.sort(sorted_actions, function(a,b)
-        return pending_actions[a].refresh_time < pending_actions[b].refresh_time
+    table.sort(sorted_action_list, function(a, b)
+        if pending_actions_map[a].refresh_time == 0 then
+            return false
+        elseif pending_actions_map[b].refresh_time == 0 then
+            return true
+        else
+            return pending_actions_map[a].refresh_time < pending_actions_map[b].refresh_time
+        end
     end)
 
-    return sorted_actions
+    return sorted_action_list
 end)
 
+--- Calculates and returns the refresh time of the next pending action.
 spec:RegisterStateExpr("next_refresh_at", function()
-    return pending_actions[sorted_actions[1]].refresh_time
+    local pending_actions_map = pending_actions
+    local sorted_action_list = sorted_actions(pending_actions_map)
+    
+    return pending_actions_map[sorted_action_list[1]].refresh_time
 end)
 
 spec:RegisterStateExpr("excess_e", function()
@@ -851,23 +990,26 @@ spec:RegisterStateExpr("excess_e", function()
     local previous_time = query_time
     local tf_pending = false
     local regen_rate = energy.regen
-    for i = 1, #sorted_actions do
-        local entry = sorted_actions[i]
-        if pending_actions[entry].refresh_time > 0 and pending_actions[entry].refresh_time < 3600 then
-            local elapsed_time = pending_actions[entry].refresh_time - previous_time
+    local pending_actions_map = pending_actions
+    local sorted_action_list = sorted_actions(pending_actions_map)
+
+    for i = 1, #sorted_action_list do
+        local entry = sorted_action_list[i]
+        if pending_actions_map[entry].refresh_time > 0 and pending_actions_map[entry].refresh_time < 3600 then
+            local elapsed_time = pending_actions_map[entry].refresh_time - previous_time
             local energy_gain = elapsed_time * regen_rate
             if not tf_pending then
-                tf_pending = tf_expected_before(query_time, pending_actions[entry].refresh_time)
+                tf_pending = tf_expected_before(query_time, pending_actions_map[entry].refresh_time)
                 if tf_pending then
-                    pending_actions[entry].refresh_cost = pending_actions[entry].refresh_cost - 60
+                    pending_actions_map[entry].refresh_cost = pending_actions_map[entry].refresh_cost - 60
                 end
             end
 
-            if energy_gain < pending_actions[entry].refresh_cost then
-                floating_energy = floating_energy + pending_actions[entry].refresh_cost -  energy_gain
-                previous_time = pending_actions[entry].refresh_time
+            if energy_gain < pending_actions_map[entry].refresh_cost then
+                floating_energy = floating_energy + pending_actions_map[entry].refresh_cost -  energy_gain
+                previous_time = pending_actions_map[entry].refresh_time
             else
-                previous_time = previous_time + pending_actions[entry].refresh_cost / regen_rate
+                previous_time = previous_time + pending_actions_map[entry].refresh_cost / regen_rate
             end
         end
     end
@@ -957,10 +1099,11 @@ spec:RegisterStateExpr("should_bearweave", function() -- aka can_bearweave
     -- Prioritize all timers over weaving
     local default_weave_duration = 1.5 * 3 + latency * 2
     local earliest_weave_end = query_time + default_weave_duration
-    local is_pooling = next_refresh_at > 0
+    local next_refresh_time = next_refresh_at
+    local is_pooling = next_refresh_time > 0
 
-    if is_pooling and next_refresh_at < earliest_weave_end then
-        Hekili:Debug("is_pooling (%d) and next_refresh_at (%d) < earliest_weave_end (%d)", is_pooling, next_refresh_at, earliest_weave_end)
+    if is_pooling and next_refresh_time < earliest_weave_end then
+        Hekili:Debug("is_pooling (%s) and next_refresh_at (%d) < earliest_weave_end (%d)", tostring(is_pooling), next_refresh_time, earliest_weave_end)
         return false
     end
 
@@ -1001,9 +1144,10 @@ spec:RegisterStateExpr("should_cat", function() -- aka terminate_bearweave
 
     -- Check timer leeway
     local earliest_weave_end = query_time + smallest_weave_extension + 1.5
-    local is_pooling = next_refresh_at > 0
+    local next_refresh_time = next_refresh_at
+    local is_pooling = next_refresh_time > 0
 
-    if is_pooling and next_refresh_at < earliest_weave_end then
+    if is_pooling and next_refresh_time < earliest_weave_end then
         return true
     end
 
@@ -1011,7 +1155,7 @@ spec:RegisterStateExpr("should_cat", function() -- aka terminate_bearweave
     local energy_to_dump = final_energy + 1.5 * energy.regen -- need to include Cat Form GCD here
     local time_to_dump = earliest_weave_end + floor(energy_to_dump / action.shred.cost)
     
-    return time_to_dump - query_time >= ttd or tf_expected_before(query_time, time_to_dump)
+    return (time_to_dump - query_time >= ttd) or tf_expected_before(query_time, time_to_dump)
 end)
 
 spec:RegisterStateExpr("movement_speed", function()
@@ -1032,9 +1176,10 @@ spec:RegisterStateExpr("should_leaveweave", function()
 
     -- Prioritize all timers over weaving
     local weave_end = query_time + weave_duration
-    local is_pooling = next_refresh_at > 0
+    local next_refresh_time = next_refresh_at
+    local is_pooling = next_refresh_time > 0
 
-    if (is_pooling and next_refresh_at < weave_end) or tf_expected_before(query_time, weave_end) then
+    if (is_pooling and next_refresh_time < weave_end) or tf_expected_before(query_time, weave_end) then
         return false
     end
 
@@ -1083,7 +1228,7 @@ spec:RegisterResource( Enum.PowerType.Rage, {
 
         stop = function() return state.swings.mainhand == 0 end,
         value = function( now )
-            return state.buff.maul.expires < now and rage_amount() or 0
+            return rage_amount()
         end,
     },
 } )
@@ -1252,10 +1397,12 @@ spec:RegisterAuras( {
         max_stack = 1,
         copy = { 5487, 9634, "dire_bear_form" }
     },
-    -- Immune to Fear effects.
+    -- Your Lacerate periodic damage has a 50% chance to refresh the cooldown of Mangle (Bear) and make it free. 
+    -- When activated, this ability allows Mangle (Bear) to hit up to 3 targets with no cooldown, 
+    -- reduces Cat Form abilities' energy cost by 50% for 15 seconds, and prevents the use of Tiger's Fury during Berserk.
     berserk = {
         id = 50334,
-        duration = function() return glyph.berserk.enabled and 20 or 15 end,
+        duration = function() return glyph.berserk.enabled and 25 or 15 end,
         max_stack = 1,
     },
     -- Immunity to Polymorph effects.  Increases melee attack power by $3025s1 plus Agility.
@@ -1307,14 +1454,14 @@ spec:RegisterAuras( {
     -- Increases spell damage taken by $s1%.
     earth_and_moon = {
         id = 60433,
-        duration = 12,
+        duration = 15,
         max_stack = 1,
         copy = { 60433, 60432, 60431 },
     },
     -- Starfire critical hit +40%.
     eclipse_lunar = {
         id = 48518,
-        duration = 15,
+        duration = 3600,
         max_stack = 1,
         last_applied = 0,
         copy = "lunar_eclipse",
@@ -1322,7 +1469,7 @@ spec:RegisterAuras( {
     -- Wrath damage bonus.
     eclipse_solar = {
         id = 48517,
-        duration = 15,
+        duration = 3600,
         max_stack = 1,
         last_applied = 0,
         copy = "eclipse_solar",
@@ -1348,17 +1495,19 @@ spec:RegisterAuras( {
     -- Rooted.  Causes $s2 Nature damage every $t2 seconds.
     entangling_roots = {
         id = 19975,
-        duration = 12,
+        duration = 27,
         max_stack = 1,
         copy = { 339, 1062, 5195, 5196, 9852, 9853, 19970, 19971, 19972, 19973, 19974, 19975, 26989, 27010, 53308, 53313, 65857, 66070 },
     },
-    feline_grace = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=20719)
+    -- Reduces damage from falling.
+    feline_grace = {
         id = 20719,
         duration = 3600,
         max_stack = 1,
     },
-    feral_aggression = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=16862)
-        id = 16862,
+    -- Increases the damage caused by your Ferocious Bite by 10% and causes Faerie Fire (Feral) to apply 3 stacks of the Faerie Fire effect when cast.
+    feral_aggression = {
+        id = 16859,
         duration = 3600,
         max_stack = 1,
         copy = { 16862, 16861, 16860, 16859, 16858 },
@@ -1388,7 +1537,7 @@ spec:RegisterAuras( {
     -- Converting rage into health.
     frenzied_regeneration = {
         id = 22842,
-        duration = 10,
+        duration = 20,
         tick_time = 1,
         max_stack = 1,
         copy = { 22842, 22895, 22896, 26999 },
@@ -1402,24 +1551,19 @@ spec:RegisterAuras( {
     -- Asleep.
     hibernate = {
         id = 2637,
-        duration = 20,
+        duration = 40,
         max_stack = 1,
         copy = { 2637, 18657, 18658 },
     },
     -- $42231s1 damage every $t3 seconds, and time between attacks increased by $s2%.$?$w1<0[ Movement slowed by $w1%.][]
     hurricane = {
         id = 16914,
-        duration = function() return 10 * haste end,
-        tick_time = function() return 1 * haste end,
+        duration = 10,
+        tick_time = 1,
         max_stack = 1,
         copy = { 16914, 17401, 17402, 27012, 48467 },
     },
-    improved_moonfire = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=16822)
-        id = 16822,
-        duration = 3600,
-        max_stack = 1,
-        copy = { 16822, 16821 },
-    },
+    -- TODO: remove 
     improved_rejuvenation = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=17113)
         id = 17113,
         duration = 3600,
@@ -1428,7 +1572,7 @@ spec:RegisterAuras( {
     },
     -- Movement speed slowed by $s1% and attack speed slowed by $s2%.
     infected_wounds = {
-        id = 58181,
+        id = 58179,
         duration = 12,
         max_stack = 1,
         copy = { 58181, 58180, 58179 },
@@ -1443,14 +1587,14 @@ spec:RegisterAuras( {
     -- Chance to hit with melee and ranged attacks decreased by $s2% and $s1 Nature damage every $t1 sec.
     insect_swarm = {
         id = 5570,
-        duration = function() return 12 + (talent.natures_splendor.enabled and 2 or 0) end,
+        duration = 12,
         tick_time = 2,
         max_stack = 1,
         copy = { 5570, 24974, 24975, 24976, 24977, 27013, 48468 },
     },
     -- $s1 damage every $t sec
     lacerate = {
-        id = 48568,
+        id = 33745,
         duration = 15,
         tick_time = 3,
         max_stack = 3,
@@ -1459,24 +1603,19 @@ spec:RegisterAuras( {
     -- Heals $s1 every second and $s2 when effect finishes or is dispelled.
     lifebloom = {
         id = 33763,
-        duration = function() return glyph.lifebloom.enabled and 8 or 7 end,
+        duration = 10,
         tick_time = 1,
         max_stack = 3,
         copy = { 33763, 48450, 48451 },
     },
-    living_spirit = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=34153)
-        id = 34153,
-        duration = 3600,
-        max_stack = 1,
-        copy = { 34153, 34152, 34151 },
-    },
     mark_of_the_wild = {
         id = 79061,
-        duration = 6000,
+        duration = 36000,
         max_stack = 1,
         shared = "player",
         copy = { 1126, 5232, 5234, 6756, 8907, 9884, 9885, 16878, 24752, 26990, 39233, 48469 },
     },
+    -- TODO: remove
     maul = {
         duration = function() return swings.mainhand_speed end,
         max_stack = 1,
@@ -1484,7 +1623,7 @@ spec:RegisterAuras( {
     -- $s1 Arcane damage every $t1 seconds.
     moonfire = {
         id = 8921,
-        duration = function() return 9 + (talent.natures_splendor.enabled and 3 or 0) end,
+        duration = 12,
         tick_time = 3,
         max_stack = 1,
         copy = { 8921, 8924, 8925, 8926, 8927, 8928, 8929, 9833, 9834, 9835, 26987, 26988, 48462, 48463, 65856 },
@@ -1509,13 +1648,14 @@ spec:RegisterAuras( {
         copy = { 45281, 45282, 45283 },
     },
     natural_shapeshifter = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=16835)
-        id = 16835,
+        id = 16833,
         duration = 6,
         max_stack = 1,
         copy = { 16835, 16834, 16833 },
     },
-    naturalist = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=17073)
-        id = 17073,
+    -- Reduces the cast time of your Healing Touch and Nourish spells by 0.50 sec.
+    naturalist = {
+        id = 17070,
         duration = 3600,
         max_stack = 1,
         copy = { 17073, 17072, 17071, 17070, 17069 },
@@ -1523,7 +1663,7 @@ spec:RegisterAuras( {
     -- Spell casting speed increased by $s1%.
     natures_grace = {
         id = 16886,
-        duration = 3,
+        duration = 15,
         max_stack = 1,
     },
     -- Melee damage you take has a chance to entangle the enemy.
@@ -1547,14 +1687,14 @@ spec:RegisterAuras( {
     },
     -- Stunned.
     pounce = {
-        id = 49803,
+        id = 9005,
         duration = 3,
         max_stack = 1,
         copy = { 9005, 9823, 9827, 27006, 49803 },
     },
     -- Bleeding for $s1 damage every $t1 seconds.
     pounce_bleed = {
-        id = 49804,
+        id = 9007,
         duration = 18,
         tick_time = 3,
         max_stack = 1,
@@ -1597,14 +1737,14 @@ spec:RegisterAuras( {
     -- Heals $s2 every $t2 seconds.
     regrowth = {
         id = 8936,
-        duration = 21,
+        duration = 6,
         max_stack = 1,
         copy = { 8936, 8938, 8939, 8940, 8941, 9750, 9856, 9857, 9858, 26980, 48442, 48443, 66067 },
     },
     -- Heals $s1 damage every $t1 seconds.
     rejuvenation = {
         id = 774,
-        duration = 15,
+        duration = 12,
         tick_time = 3,
         max_stack = 1,
         copy = { 774, 1058, 1430, 2090, 2091, 3627, 8070, 8910, 9839, 9840, 9841, 25299, 26981, 26982, 48440, 48441 },
@@ -1612,7 +1752,7 @@ spec:RegisterAuras( {
     -- Bleed damage every $t1 seconds.
     rip = {
         id = 1079,
-        duration = function() return 12 + ((glyph.rip.enabled and 4) or 0) + ((set_bonus.tier7feral_2pc == 1 and 4) or 0) end,
+        duration = function() return 16 + ((set_bonus.tier7feral_2pc == 1 and 4) or 0) end,
         tick_time = 2,
         max_stack = 1,
         copy = { 1079, 9492, 9493, 9752, 9894, 9896, 27008, 49799, 49800 },
@@ -1630,29 +1770,11 @@ spec:RegisterAuras( {
             if combo_points.current == 0 then
                 return 0
             end
-            return 14 + (set_bonus.tier8feral_4pc == 1 and 8 or 0) + ((combo_points.current - 1) * 5)
+            -- The base duration is 14s + 5s per extra CP. We assume 9s for 0 CP to make the calculations easier.
+            return 9 + (combo_points.current * 5) + (talent.endless_carnage.rank * 4) + (set_bonus.tier8feral_4pc == 1 and 8 or 0)
         end,
         max_stack = 1,
         copy = { 52610 },
-    },
-    sharpened_claws = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=16944)
-        id = 16944,
-        duration = 3600,
-        max_stack = 1,
-        copy = { 16944, 16943, 16942 },
-    },
-    shredding_attacks = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=16968)
-        id = 16968,
-        duration = 3600,
-        max_stack = 1,
-        copy = { 16968, 16966 },
-    },
-    -- Reduced distance at which target will attack.
-    soothe_animal = {
-        id = 2908,
-        duration = 15,
-        max_stack = 1,
-        copy = { 2908, 8955, 9901, 26995 },
     },
     -- Melee haste increased by 15%.
     stampede_bear = {
@@ -1678,8 +1800,9 @@ spec:RegisterAuras( {
         max_stack = 1,
         copy = { 48505, 50286, 50288, 50294, 53188, 53189, 53190, 53191, 53194, 53195, 53196, 53197, 53198, 53199, 53200, 53201 },
     },
-    starlight_wrath = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=16818)
-        id = 16818,
+    -- Reduces the cast time of your Wrath and Starfire spells by 0.15-0.5 sec.
+    starlight_wrath = {
+        id = 16815,
         duration = 3600,
         max_stack = 1,
         copy = { 16818, 16817, 16816, 16815, 16814 },
@@ -1693,7 +1816,7 @@ spec:RegisterAuras( {
     -- Health increased by 30% of maximum while in Bear Form, Cat Form, or Dire Bear Form.
     survival_instincts = {
         id = 61336,
-        duration = 20,
+        duration = 12,
         max_stack = 1,
     },
     -- Immune to Polymorph effects.  Movement speed increased by $40121s2% and allows you to fly.
@@ -1705,8 +1828,9 @@ spec:RegisterAuras( {
     -- Causes $s1 Nature damage to attackers.
     thorns = {
         id = 467,
-        duration = function() return glyph.thorns.enabled and 6000 or 600 end,
+        duration = 20,
         max_stack = 1,
+        shared = "target",
         copy = { 467, 782, 1075, 8914, 9756, 9910, 16877, 26992, 53307, 66068 },
     },
     -- Increases damage done by $s1.
@@ -1739,7 +1863,7 @@ spec:RegisterAuras( {
     -- Immune to Polymorph effects. Increases healing received by $34123s1% for all party and raid members within $34123a1 yards.
     tree_of_life = {
         id = 33891,
-        duration = 3600,
+        duration = 25,
         max_stack = 1,
     },
     -- Dazed.
@@ -1763,39 +1887,34 @@ spec:RegisterAuras( {
         max_stack = 1,
         copy = { 48438, 53248, 53249, 53251 },
     },
-    wrath_of_cenarius = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=33607)
-        id = 33607,
-        duration = 3600,
-        max_stack = 1,
-        copy = { 33607, 33606, 33605, 33604, 33603 },
-    },
 
     rupture = {
-        id = 48672,
+        id = 1943,
         duration = 6,
         max_stack = 1,
         shared = "target",
         copy = { 1943, 8639, 8640, 11273, 11274, 11275, 26867, 48671 }
     },
     garrote = {
-        id = 48676,
+        id = 703,
         duration = 18,
         max_stack = 1,
         shared = "target",
         copy = { 703, 8631, 8632, 8633, 11289, 11290, 26839, 26884, 48675 }
     },
     rend = {
-        id = 47465,
+        id = 94009,
         duration = 15,
         max_stack = 1,
         shared = "target",
-        copy = { 772, 6546, 6547, 6548, 11572, 11573, 11574, 25208 }
+        copy = { 772, 6546, 6547, 6548, 11572, 11573, 11574, 25208, 94009 }
     },
     deep_wound = {
         id = 43104,
         duration = 12,
         max_stack = 1,
-        shared = "target"
+        shared = "target",
+        copy = {43104, 413764}
     },
     bleed = {
         alias = { "lacerate", "pounce_bleed", "rip", "rake", "deep_wound", "rend", "garrote", "rupture" },
@@ -1812,7 +1931,7 @@ spec:RegisterStateFunction( "swap_form", function( form )
 
     if form == "bear_form" then
         spend( rage.current, "rage" )
-        if talent.furor.rank==5 then
+        if talent.furor.rank==3 then
             gain( 10, "rage" )
         end
     end
@@ -2350,10 +2469,9 @@ spec:RegisterAbilities( {
         gcd = "totem",
 
         spend = function()
-            local unglyphed = (buff.clearcasting.up and 0) or (25 * ((buff.berserk.up and 0.5) or 1))
-            --Glyph of Ferocious Bite: and consumes up to 25 additional energy to increase damage by up to 100%, and heals you for 1% of your total maximum health for each 10 energy used
-            local additional_due_glyph = (glyph.ferocious_bite.enabled and min(25, energy.current - unglyphed) or 0)
-            return  unglyphed + additional_due_glyph end, 
+            local base_cost = (buff.clearcasting.up and 0) or (25 * ((buff.berserk.up and 0.5) or 1))
+            local excess_energy = min(25, energy.current - base_cost) or 0
+            return  base_cost + excess_energy end, 
         spendType = "energy",
 
         -- This will override action.X.cost to avoid a non-zero return value, as APL compares damage/cost
@@ -2368,6 +2486,7 @@ spec:RegisterAbilities( {
             set_last_finisher_cp(combo_points.current)
             spend( combo_points.current, "combo_points" )
             --spend( min( 30, energy.current ), "energy" )
+            if debuff.rip.up and talent.blood_in_the_water.rank == 2 and target.health.pct < 20 then applyDebuff( "target", "rip", debuff.rip.duration) end
         end,
 
     },
@@ -2702,7 +2821,7 @@ spec:RegisterAbilities( {
         end,
 
     },
-    --Mangle the target for 285% normal damage plus 50 and causes the target to take 30% additional damage from bleed effects for 1 min.  Awards 1 combo point.
+    --Mangle the target for 540% normal damage plus 56 and causes the target to take 30% additional damage from bleed effects for 1 min.  Awards 1 combo point.
     mangle_cat = {
         id = 33876,
         cast = 0,
@@ -3013,20 +3132,19 @@ spec:RegisterAbilities( {
         startsCombat = true,
         texture = 132122,
         damage = function ()
-            return calculate_damage( 0.147, 56, false, true ) * (debuff.mangle.up and 1.3 or 1)
+            local damage_multiplier = (debuff.mangle.up and 1.3 or 1)
+            return calculate_damage( 56, 0.147, false, true, false, damage_multiplier )
         end,
-        tick_damage = function ()
-            return calculate_damage( 0.147, 56, false, true ) * (debuff.mangle.up and 1.3 or 1) 
-        end,
-        tick_dmg = function ()
-            return calculate_damage( 0.147, 56, false, true ) * (debuff.mangle.up and 1.3 or 1) 
+        tick_damage = function () -- TODO: Rake can be snapshotted with Tiger's Fury and should continue to apply the increased damage even after Tiger's Fury expires.
+            local damage_multiplier = (debuff.mangle.up and 1.3 or 1) * (set_bonus.tier11feral_2pc == 1 and 1.1 or 1)
+            return calculate_damage( 56, 0.147, false, true, false, damage_multiplier )
         end,
 
         -- This will override action.X.cost to avoid a non-zero return value, as APL compares damage/cost with Shred.
         cost = function () return max( 35, class.abilities.rake.spend ) end,
 
         
-        readyTime = function() return debuff.rake.remains - debuff.rake.tick_time end,
+        readyTime = function() return max( 0, debuff.rake.remains - debuff.rake.tick_time ) end,
 
         form = "cat_form",
         handler = function()
@@ -3198,7 +3316,7 @@ spec:RegisterAbilities( {
         texture = 132152,
 
         usable = function() return combo_points.current > 0, "requires combo_points" end,
-        readyTime = function() return debuff.rip.remains end, -- ((not rip_tf_snapshot or buff.tigers_fury.up ) and debuff.rip.tick_time or 0) end, -- Disable last tick refresh for now until we know if new rip is stronger
+        readyTime = function() return max( 0, debuff.rip.remains - debuff.rip.tick_time ) end, -- ((not rip_tf_snapshot or buff.tigers_fury.up ) and debuff.rip.tick_time or 0) end, -- Disable last tick refresh for now until we know if new rip is stronger
         handler = function ()
             applyDebuff( "target", "rip" )
             removeBuff( "clearcasting" )
@@ -3268,7 +3386,7 @@ spec:RegisterAbilities( {
         end,
 
     },
-    --Shred the target, causing 425% damage plus 50 to the target.  Must be behind the target.  Awards 1 combo point.  Effects which increase Bleed damage also increase Shred damage.
+    --Shred the target, causing 540% damage plus 56 to the target.  Must be behind the target.  Awards 1 combo point.  Effects which increase Bleed damage also increase Shred damage.
     shred = {
         id = 5221,
         cast = 0,
@@ -3284,7 +3402,8 @@ spec:RegisterAbilities( {
 
         form = "cat_form",
         damage = function ()
-            return calculate_damage( 4.25 , 56, true, false, true) * (debuff.mangle.up and 1.3 or 1) * (debuff.bleed.up and rend_and_tear_mod or 1)
+            local damage_multiplier = (debuff.mangle.up and 1.3 or 1) * rend_and_tear_mod_shred
+            return calculate_damage( 56 , 5.40, true, false, true, damage_multiplier)
         end,
     
         -- This will override action.X.cost to avoid a non-zero return value, as APL compares damage/cost with Shred.
@@ -3358,6 +3477,7 @@ spec:RegisterAbilities( {
         texture = 132163,
 
         handler = function()
+            removeDebuff( "target", "dispellable_enrage" )
         end,
 
     },
@@ -4109,7 +4229,8 @@ end
 spec:RegisterOptions( {
     enabled = true,
 
-    aoe = 3,
+    aoe = 2,
+    cycle = true,
 
     gcd = 1126,
 
@@ -4119,7 +4240,7 @@ spec:RegisterOptions( {
     damage = false,
     damageExpiration = 6,
 
-    potion = "speed",
+    potion = "tolvir",
 
     package = "Feral DPS",
     usePackSelector = true
@@ -4128,8 +4249,8 @@ spec:RegisterOptions( {
 
 -- Default Packs
 spec:RegisterPack( "Balance (IV)", 20230228, [[Hekili:9IvZUTnoq4NfFXigBQw74MMgG6COOh20d9IxShLeTmvmr0FlfLnYcb9SVdffTO4pskfO9sRd5mFZhNz4mdL)g))2F)red7)J7wF3213D3N92S5(h)4g)9S3kW(7lqrVIEb(rgkf(3VIsqzr4MWBE(FwX39TKC0rokL5v0iqc)9hQijSNZ8pyf6TpcYwGJ8)XgWiNihpIfIIlJuW)B0kYXMWckjNsyV1egNtBc)l8RKecyxAEmjbSgkIrYZk9kO4O80di2FS7ptr0xdYJdyNWbxijhVLeVBrvXYfhQIJ9EHeZu31RQO572GHDkNMv2PSDrsZZZELKfaClDublY5R189R7cRfHssce)zqcPKDl3dVJKryQsrRYmfcLJ5MJV(zCaodNsWLpTDs9klqT88mIsqhsWE8fcYYVmPMXKYtk03JttqwjqcHsQYq0ajM3EgLuH3160XrjKIsCqRed84wbQmpzcGALyganeIRN7HmTUU3HmWYtGo3POG(chWVCXph8cuIqzbq6EKB3zcQKfGkksi4J7wxx)Vvy6Bbmsk(dti9t72UEkpylJhJeIqXCjHP0ZGecpHM7(QtvU(sn)VK0Z6eoj43OfeLOxxRh3L7Ss9cdhhW0LmenMqBV(k8lGo4YGlue7eKpV8gD0KeOU2uEkofrYk)IWiEsW9Ej6yDDA(zs2lRmOaVOLKcloIBrvUgNbc9mudQXfH5foZqSkk2(jdkPzQictj4GRMKFizOeCgZJKc(PZ4JbkY4HZ4NE4a8cnVQiifNEatlFA39UpsGpahXckVG6Qd3DSuxFqXIo9GwCNGtoxfb0lFjbwYRBDjvE3UqhHWL6IkJFBnSqB8DqP6HqnAILwMAVo9AXlbbADc6XtHUXqiaffHtWGzH9VTQKhQJdGePDB6Zv1QIV0YQDhPNkXmg4qlL3jYZtoMFbAPGXxqVzqerdYF)2LBqcdNw(730tvkWqHzMLdLqSsDzbeRC)HvgMZmf0v3llhihTcvtbHHygEfCI7Ec5nlZiw)ufLsGkVWmHNHuAyNRZD(G)EW1KXdn(7FoTiNYaCd)utOaIMq(CoLEnF3FF7V4JZYV0a))pANqUJl(F1FFemnkuRcXhZ1smlCjmACt4IMqxxCdRRBcDwkVj8lsAnOCUqTUsZHRKd(cJs3jKpdoVo5kWhZYuTKvazpEY954TLJNCdT6)Qgce9JQIkJrAYC)y0R33nJEdcVXG(dnHpTRj8EN(jfu4C5tZWvPDVQhl1n4G9GtWKebozwZU7XSBdoCFEgCtpm6mBBPPkQPABTh5F0jfCyOEyAtN5ySz90GmSbL1SAg)PHXOQeMTRJsf0FmL4MCG4rR8X(g)(bxZ(xsb5sd8mAViAa2q1NRxvM4S2vdCE4YL(6fllh4X0TT2vRN76BqhVuw)9VfD1MS8kzLmfThypzThvLfpRECFMMkQpZ2OyJyYHHLAyI4YON55FF8UzuBBqPsLErASQnQoJUk6pxMhAC39UnFD8PpuiN9r(83RmaeNGJgt)LZszu1KuUZA(LtQRdlAJx6xuhFqb7nWhTdPJ300pXHJZF)8goDapmOvPE7n39kDmzOLMbUBr6ysrx9cARLB5guo4sH4yVAsC5)cErVJ0Jw56kBQralxaENgr(rQunIMNYsc90gX1W1THANXefoOyD902PTU5ST9ey5WrFDtHRT8TK1pnfSekv)IsnHWOGRfUJ(Vdvt4hSEryOM8Pi3U2mTq(rDSDH4DsyZpb2CjSnnnj8WVpLTBFtt4Z6F)lBtzE1egEl1WR(4S)Sg)gJeRRFGVwhNzEz)(Rm9pkuumWqfFYe)9Fdh)FOiX8t())d]] )
-spec:RegisterPack( "Feral DPS", 20240528, [[Hekili:TV1)VTTUr8)wmkGHZlTEwjXP9neNF4THb0UHUhM72(njXirhRfzjbkQKxkm0F77osrjkksfL08W6akqBIn59nE8Up84xIVN)x83gt4u)pF2QZUy16Z(WsVvN9Zx8b)T8hlO(Blir3rUf(qg5a8Z)cLrsRd)Z)6wSRhtZjXOikZRyrq3(BVPkjL)Xm)BSk3ZVeOTGg5)zpp)T7tIJPssPLr(B)358)2FTouPdwvsCD4VYsYzj8eAz9NQ)0xYV92uADij(Eswef6NLZj8K8m4t0O8dhOzXIVxwhManY3duhLskHVNxi6yjy6S8DjPGbtIKnviy(gc)0n)Hde2Db57cawdEijn(Tj72m7MQD7wwcQkq8PQI6p9gBmZ3NZYkfSG0yJKiqi7YzhAiAUu23qjmrZlDXxrUyC(P2EH2QkPbjC6Hs9gve21YEyUKboEACajkIMcEySR3ISNVBxWTrXB8q7PKcdW8SQYLGhN9(D4urWffrB8MVqyM8KBbjfSRI9iyOhpgLNNgN)qwVoy0dKKSYR34T(eDZGvLfi)wqAsj)Tym1gCG)aLCpf1)axXCv3jz3gqZi3Kct6trKbCs2DbKChIDMf5ohf09u4R0dq821xiuEWH8yQuApB9)m09luvyWK(GufCH6Xy4C2ueMnbPZNrWlgn(M6W)eH)hHmw6osvkVo8F0Mt(WEAMmruXyxSDKmHPlUzy4iN9yGgbM8Ed0bLDND(A60KNie3ivKf)w8hbIrEbl5aePFGeNrlfPVn01VJ5cxt)2qpn4Iz3(4YOkgJMXV6SvMADhHYsOb7syWpWKkufOYZFyoNWULYxMxXltIPNnGvroy0EKQGMzO(S8EtwoqYausfXsbW98cy0DmA5EuRMSWskqAHFzR3sY9WIabSCctqf8BBKbAkpkjVQm4gausekb)wmix03fD9gjNl7ZYsaJkl(4XzL7ZRsJdAXgoz8HyZ3SnUi3jme83263LRcxhl2gdTzYc4sdZCkZDn8KI0BLjMWzlnAHB32eYEgvSW0c6VfbbHb0wpQOlLJuMkd6Ifrk5aEJa0UbssKFiAWCYP57hi)27A(iJEln7NsHL0ZIE8KxqAFijdwT(aqycSQSi(T3GcrXEk4aJ0Slx9Uf2gGZ9wF84QtSjEfIXaHD9LRM)uRLztGgzg465CE81EN24QSXt)yUfDR5MeNNQQ8ikNXQk45SnEhpoKKdv8KuH3EJ3jZXAeYdkYtY4LQr0Mvs0knlunyUAJN1XIkOAC19c028fOtXfbN26TSoNPsHN99Lzv(qsr7K4WSqvVJLjAtSJSsHiR7n)IcSbs9(NLq1Tj7Qd1QOOouv7GmLdenKqIyoiz1Hyeop5GgStl8Li2Sk1szHsmlquZBgFiDGJIe)OD5ePvNqh32PLMXqaVbADMMArkAt8BTbrEekkPx(0Mo47zKY9Y2CnmBz1obsryVVbtrphx5m7bc4m7xGc)WkaHjwiuNBzUSmjtS9ht8Z2corRdCrFnbQ0xazRQ0h08EkjLVFzre)QZxzN3Yk29j3dlzbH)G(J4LgmEHdg7Tqh2XOvPOZPWljwRRBc(61RTtCrv69GV)Rc8G4C(YuseocPaKD0DGZzEVgH9RfD3MZ73Ok9)chJeB5FnthLlrw5W)d2TB(IyQyU8a5)KZciSdWpba0kzmiMMD8OIgnPIlqzPvLzD5jNy3WIPGciPjFf31GA9MHgg2tRPrkCArdeNMDnSVwNMlRtBHvBZl2zQjX3y2)QpSsBZ19cpFmJuajuLqf4WG2UqvQwKSzngzMr9pUcmDarOiWgeHZOOx145fYrql3Df111u3m2t7MgQKRo3D2QaS6PXQCuQxR0uR39sHRuld)IGSuk)LbB1wh3uHUAy4foDpz4RXkH4)5qyng33XWyd3JWeHYAy85aNHSmnin1gJCH20RCuvmmsL2r)ylBUHVxf4Y(BSXbKPROZx98LVz4rlUMjcrQHmmb5g9iuhyGeVPSP8qBdZJhTcbS2FlmAkbD0Em7qtpqyzyOK)2pEOiNXra53dyYcJPoepTVYL1FYFR4t4P33AFWx(S4kbAqY9)f)TrSeo4Yi(B7WuRdVQo88vQJp3FRvqCFoywtvAxOjTHq6OOo3POmaS1mlt4Duox4uo6zT1HxxhUEDNSWPuK91oz3kyr4CChxMXo1HBah4WoBMzLEKoD3g2IgWLonaBq8cDSauZtb0xhE8OoL9H7LMQtiFHbFzD4jW)0C)Mz6O5)(NH5Jy2gdGblfyA32wqq36DUOG0PBoggqoog(WZkgOtynyOOi(5jgfc20h0snKlXGcWBLtjmZiQspwe6ZaoVt4kgeIxGd0f83cSRRtKUZ0PtUiLjjNRtYWGcdQDNF(YsWw0nO1xrqg3yFvH2qbhPGEteeOXuqWshE5l77LRm8gCmauC6QTqZkIBV5pd)xV5d5nbAqHBGux3(NWB6P8McFw)7bu6mh78tb8uugR75uDCTKYbxZPMGd7rrTBcNjD3EkANydgxXwNEnU8l5sHbYB4wXiDCWE7ADMvfl6QFfzILxUO1shEXFt3yBRSy8fhE2g8RIDnoIV8OW0UOrhoQZMMwBoe1XrOn15Kf94O2GJuxwkfiZHBVf)XlWsbtP)md0rh6)SegV8kH9yG43n3B1q)85pf0bVZhp6aP)vRiloyvD476Gpmp)t0qrWbegzLaJWacOBjMoSf57gHLui75B82Og3FAoKUwoKMpnupRLa4ghUBYJZJf6caFpfQDNiUocTkL7U1IXbjxioMMXUMjfgpodm2fTOO7KMb)W7CrqH03idNhE1kqibkLbfy0KM5g2Dkw23SzPwOt58Dt(PgZm9wDtCDAJdkpBA(6Vxgr4nXnoIU6EWKb(s(mVlmTkVmGb08DkwghmxEVyJVJdjO14awgVZKFNrFghPr7TRme2WsLrMWiDi7Tp0fDXB9DT0fdn4TTi6YcG(zRghXP5klfGy9FGlJpDnsY)02NFtqJ7KoRVhgxqrUd1BEQmAzhjfJhTQE2moXVDxEH6D0OsKhSCux2MTxuJmLdrBmFWk92VEpo9hFtMDp5gxUop35BQxJZqOfp3jgwECoov9i7XXWdONJ1uGK)4BdDWd4z8aXr2Sy377r3rCVAh(UdHXiaRiTDV9h3OSA9ODOUIgTfw19wGevWP)EGQd)PXx6JBUfLFCaJ)4ag)Xbm()rhWyBHpwpzp35YiFg7I)CZY7ujmJG5)QCuM92x7ihL5f609KNt5RDE6VhNtP7u5N55u(((UqZZP8ZEMrSdKYuMuXrQt4kaQS39Ljl)LRFIDJU6I2RqtDmt9EhBMJVHvA7omTt2DszWjR4ka3WWgKE2APgV2nX20A6u)fVniz21XP(0PeRFsiGlFo5mUHMN9uBi0XCImaGusJ)7z6)1jbPtF8FHPfv4Fqo(B3wvqzWMSlfC4)Fp]] )
-spec:RegisterPack( "Feral Guardian", 20240525, [[Hekili:TRvBVTnos4FlbfiiPBQ3yN40EaX5d7E4w0S3L7aCXTFtsmsu2CTSKafLttHH(TVZqQxOOivCEzb6hkqRJL4mdhoV8mdNeVPEFXBzerq9UB25ZU885ZMpz205ZM5Tu8yo1BzojCdzf8LuYw4Z)fLtsQc(TscpIrsX1FmjJeHIPiRKhc04T8(swI4ZPE3Bv2tNc0Mtd9Ud)2AwuevrkTi0B5FKj(3)Evq9g9p5LSOQGVqs3uf8)4SmotWOfv3wD7xYwTkHwfqI2rsdPav8mbrWYsHVrdZ2ULMgjFUOkGbVuSgOomHuapNLlxycCa4zXSeqTjHQxLlz(EI4Nw8ZBj8n(zX(aR(pWsIoJfV4O7lJJNuaBLV8BL5v3AJxX6mEAHKdxKCpLW9JZ4BhLQ8m5H622vH3vwq9zc62c9x2qy3Bwd(qoyRPr(KWqAcyuXLodzplo2Fvy0IP6mWlt9vp5NWkeNHE9fs1uaUaFsgfvv55Uv5blWXip7O(0u6wW9CZZqMwL3tYEir0Yi89w94iYQv8mD2hAJRU9DvblzPYONVq4ROIodFREbSgZPPFJb2ooDfCYQTDGywtjjI1tYdfxFX525TOKVJTJK4ZsleS0qrHbJx6GXymW3pCnQx(4ciFcPwojRuuWIOF0oNBjLjiXCiFDsyjh0EXnZNBN48YKDuo7Bs)zuMyscjepH0jcw4gW4CCVxcH7HBwCr)xYPBjWX76lDCsiWgq9JzC4d8uHBvbvaMJvftqwfW)9JJp(KiQ0tUL8NzCFcFl8jNgvkf6KOShs3VVHgnPIoClVTrTU60tTRyruydijSVbkIpptzIhQy4kTQgj3PgnqCA61W1AnAU0U7HmwkFJl)IDMOPOx307F9NGGS3zn88XusoacuKZXdTDH2S1YmhRXihvN5k14EiH9dmXCnzWSDceR5KI1hyu0BA88jQtql3Wzy)EJx15XEAZ0Wn56lCNTwJf9FkteSrGIqy3xdCun)VmiPMn)LblvZ9HdnvZWl0DEWWtnNQVlHOQvUVJHPQ1WNpuvnJph4kKLddYQw4ortAYdEGL3fdJuP15ITS1A(EtGdBtigds0v05BE(YRg(ZIP5aHa1qgoa5g(yiyUu4nflM60fSFVviG51iT)krOFnbwCvqAgCfcztJbKu4senDtcpkJm6uUqvB9SvG)1pUK)y)2OLaI8h91iWK3M8fR8vVOjpH4LBsKx14m8dFz)VqoWwapEljkLwiXXRPR)chR8L9EhM2JLpw9yBE3SZn3vRaJ4MN9WX9r9NnGv9kf19P7Sqry91SKzd1eReGy6uakdQ5vSg3vtw4SCj8bl32QfKDaUslOj(tBKb7uwilRSW)EMk4f)P8qEsFt0nluCoPpltG7wLgTF)rfRZktIK5Zpqj7ONo(rS(jBNlYMACXnwx3LPcVYDKngKPun3)XunpeFxnpji9wzIln2kLwA2T5qwdLLqsoH(1qii0N2ArLl1yivxOd2lEibBszvhIuhS6(9MoN6N3s(6hQ)QShP3NaGaPHpEQ3samRa2T2rrm1B5deEkwjXB5N3MNXf4ieMRs7rWb8YMftQU1BP8B4eoAHNGhUto6eAk5(eAK3V0m)aVLwBttnDdiAv9q)BF6TewrajCeVLDTJvfCDvWfN7jaD2yRCs(LN3PhdB3df1fofLroQ2bYS1puox6uo6v0RcUbSPZ7Kfc3JSp3j7wBKi44QGH1vQcwawOHlwJ6RSiD7DBjnubUYPcyR9p5ECcSnpvtGvb73Rtz)wbvQQZ2bLk8vvbNc)tZ8BcfJQ)hFgQpI(zCag0MOPEBRzrDT3zdJkJU5zya54z4tpRyGoHvdeGI4FCGrHGo9jTudv7NOaMEUtjCKruLESiSMbMuNWByqkEjirxWFBtF67js3mD6unWAsYf6KmmOWGA35NVSeSt6o06DlQIBS3XyBOGJuWPhiiqTQGOHoSYx13kxAyneyaym8ArlUDdXTZr1W(1ZFOMRQbfs3HwJCOGB5WXCxneHBFuDWfPBGOOpaLE3vvKyRA7PXCsvLT8vJTVxF1JJ)oyRFM7W4GRQ67DdSTjBs2b(HTta3JJacItxRBplQiH2jRBRgEpHi1v958RhJ1)3lW4fPnui1VyGXlgpYzqf2mwSPW0H)k7wP38P(rZkVAS0F0SYpAw5L3SY4Dj4grZs1dT6PDdfRRFK)(Al6IdSTOlFw988wNN(3rppUtLFM988XX755UPMrSdKYH4uXtQt4kaQS3C5WQmYQpHpv1vJ5K5UrQEe1RO0lyuEJxDsBgCdtFnvWMItTtKdBSqFkBDIqBaE6BN151jd7SpZo5s9N7H0jm78dURs187KcYygEpbaU7eRdRoCDlBUJ9ToYVbiepzNF1tduRpsw(4G3ntgudiSB0HJdA3mQWgOctFZnlAMLK1HgQYTGeVbZKRx90EC2veWQg1nvrxMUrkp0mWrnJh8MNOyGL5p6CRD3mNPfqp9tRV3rUt7GzuoEG4ivk6gHPUHyxtfy3HWyeq9On7571gVPwHdJrCQTI2V9i5lTfw1nUZQGp0(OSd(QG3xfup2ZErss9qcpJxpGuqJ(VPT)9CP(7R6Kp))rgkXlO4TCzjCh20YIcjlE)f]] )
+spec:RegisterPack( "Feral DPS", 20240831, [[Hekili:TV1EVTnos8plglGpNTT(ITZREioa7E3Uan3IEfN7D9)KeJeDSUilzqjL0uyOp73m8HeffPSIBlUDboGIKiYHZmC4m)MHpQ3mVp6TkIuq9E)8tNF2PxTy20tpDXzZM7TQ45DuVv7iHpqUh(JuYw4N)kLrsQc(BFyf21ZjzKiKf5zLSqOBVv3vgNu8UuV7SX3fN9wG2D0qV3pBM3QnXrrubP08qVvFkR43(7vbkzWkJJQc(ij9HQGpWIZyXfX08QBRU9Jz3FFcTkGe9ijnKcuXYkifXzPWFrdZ2ULMgX)oVkigASydqDycjh(oBhVJPWeGLToobu7F4hmK6Tqd)mjh5mYZpL9PvXBHXo5NY(fKuAsEiJSU4euBWr)bUyVJuuDljuW)DQME1Y)8wc7b)S1(GE4)uCs0RJxVC0DLRxpnh0BF(FvUdyLTbxSjJLMZhcsJnscbMSoJTvs0ybVVJsy8MN6AC7Y4gTBvtJFItZB(T48IQGv0eAOOF5yHruMt9JlOGXqRrfBAAzd48WGvAAKpjmeyeJVC8AC4zRx7FFy0YzO2MtHPFwAz(uyXLD5ACvW)SDHlNnEcFsueFpWj)1LSNHPX(9HzzjrzpL2QdgDljon)MLZo)eD1GvM6l(YpbMtVgDIxIMLNOKhPO87yOgR6oo9EFAk5UeWlyiS0Va8u9jzoy7il8DmYOhPWN0TGR9nZ5c3FBwevWTxS8FbY(iff6QPpjvUEOCmNodHz2yK(4mCTvEQ)vsXFbIwPRjLjGV6)So()Pn0urqVAKnU(HCN(8Ntj7a)W8DmWEWdSkyp7R5pTFp2WDWNu2d73lnO8VAfkj4N2a76FBWzZXk5Q9Xj70CmHiMxch0414p85MsyYSfcD2sIsP58jLKU2DmMpzA3gU0bRzS7FEAyjJrtlUE(PMsDnHYIP(RJzWpWOuueOWZEACbHDpTyAwzrECeDENHYdQd3Gu5lxYBpKlnhYwskGWRiwWGIzZ8z01mA(guQMdHfVdPf(LTEZjpcPX8zzegNk43CvFKd6brMfgNvM7Fha3XDsHFZhYK22QBwkg502dzkG(LgTF)O8nzLjr(1OoNmE0ePq3VxPhN0Vbq(LTzn5bU2H)2w)UmKyE6iBdOg4GJoBO7GQBDTaMiMZO97BuAOvP6TFVfvOZK3MdJuvsq1GRlDTe4kSWwWxRT5fSHr5jFNq)Ci457tRx94DPw0easGSyHK8caLGN6Xahy)Ethb53BjF(nY)KrVNM(JjqLqPHpFIg4fKRn7xgmcwajfkfzlqymumdp0HxJcGsa)id6cs)vq4L6mBwvqujcTbdlJkhB4ZHyfti)ltfRmqRisnWbqgil(CvWJKKY2wweSVTFeNv(cTihqRGb63UTZDg0oEueLBgf8drEKibpfxSjoD(WNw0hrZeomaernb7xZheuICyFtZsi55rNPqoEv2IEYpO0(2WDynHffr3m)vsxrRJ5P4D12jJu5xSFVrllgBP8mBS9GXL10bizd03QTUC9LTDIwmEYeLFgYvES6e9gK1lETEBfXHpalaBPNCY4jOXYrN9A6e7CqbxcrXRbxu6FIHHEOxA2AEqhaniJl)4VkckdJSVG3dyScnPwCaCY)kxkuTk(qjkQTtcfGOppH8cjdIQGQPXPwJculcE4tzILY2f6cWQXs8tKoWUsIEwU7dd4t7CpuR6UgEANwAkdDK6OlJ0ugKI6IyQ1moaaYkb((RKDuSHrY3iAZUifuyjEyMD6f(byldFmAQxFkH9(6uv2lzr0X6KWRc33nU7aWPc2JwHf)O84u(UWv5J0fmFpfO(bleFjg2fiprOAxGGS3qjjfBMUlS46fNAFS5LShJHes(qKki)WICJbEMJb2Q8b1IHZco1hj3oXrQACJUz55NBN6DLjpcM)VWb3IYkMMqcXPOaUaSoJB1iSv)WhwUODJkKOZSlcfDdayC(W0IdiWUL5pqjlDsYNQYz7VE94j1z7)pzmFcBl8tOmRsr8hc80amRjzSSalTQu9l0bH1v(ikiass8xW95QY91vXWEQvnYoNAuh2PPxD7R2W6s76KUwVtj4MHV31lVYvWr7YtStKnKJgxDhWohRR3iR(EJCwwK9iPbkSd7NRI2Mi0GAj0ujFttnlDFBmfDvKRxmWWn34sMaZQDq4aD2yZcD4QScJJgGwv5ZrbsRe(Xbuxxy)GbRLJ47nGTAAz7Os(Fo(Ou5(DmgPAxsUqTAvSTdGR27uYnbVi8w7Bj0nH14fFnWIT3(A)t3HaJ81fd8vdJAX0mqysTWDVvGOYHUL3R0fZx4T6jclfxp8w9UT7Yyfie4LakiNpvb4PnNpT6wVv8)cVUQAwdF8E(DGjXo9(zVvHS4cy(q8w1GIvfCDvWIt9wjyQ3kRWMEfGAnuUDMg36cIISAHtwzarQPwMaQiFoZjF0D9RcUzzvW5N3WmUbhg)5ohVn3NQGX4wknxzRcaUVOBNsFgHjPr21ovOcCHHcOisXeqL0ZbJlPR6Kz2B18xUQ3w7av5shQsNaWJrNSLIGRtta16qjkQc2VxNY2PletnNPm4tWlQcob(honVY5sU9mfgAzN8fMkNTSg6QOZmhIvcPIwB97qoohElohuuirA1NuajZoDGHgxdoVxPfWkYEWzXmDXyKHWuCZ1PvKMZKKf6KOH9BsNzq93IyIrgE)6HfqFgPS4QHj2q343JqpgwSPjSYKgLuplLW1ZEMQAVj(C57omJuJXujCbEP(ATfeK2R4x12ZO0GGcmmGFxc1j1uexFN9gSSL7O4o8nOWDkix3BpFbzMAbHB2noIy(6rF3IVit0SZBfI74bfiMCYt1cN29MVt6btAEveOEInyC54nY14ARffr4lEmmQbs7plPDPoYQG5DHYR5CdbZrvW8AnT7v2pCLTUCkBzv)ku4Vj6LT0Rg6uO2teWLHAysvEe79NRZuMdM11PFSYwWqQZlLaeXW1VohBLM2e93(5ejEavS4DIUh0lxYqJ4Zv9hJu)fZYNdgjgA8xSo5E)Idb3u0SU07KxDFEdeq(CDf3(9)jNiM3njV923pPHPEq3u5l(cyTz7Tn9F5QITln9GMN(ZeyEVLC8D9RNSjbSwXdolzQxaCdzPvmLEJDtj4gCwtr7wTyVOKnHaffrkq6xb73KWVHvTzyZDX2pgNf4Slewpl9ik6XscwnbRUvY(H5AUwwnaoEB2WXAO4HHwr059njVMVzDZ4S6s6MOhykVmxZDtOFLUCgA9MBfBAqXx1AwpK6vVdHUguJAZCHvvdkAIqtpMBiUv9xgxgCn8PnOZVNbRUZrCSbR9d14myDavc2KvQ(f0PZERpyUMWSopAoExTFdqC3V5N2pMJ4vZP70RE5C9TDGEbJg2jcjHcCJazh(3wUN(ruepgmnWI4D9xtK6vJPYe3HdgGO9SZD170tfPBUaHBUqWvRVypreaOcDEUfsWJrCUQE2GCQB0(tAz51yUvyIgLU5TY5YApZDGM6X1zaoxOooHdSux)o8CkA3jK7AKQTqoQ0IBVSB8WV0EPJIEvVRr(x2E)I628g82clhorh1U5Xe2FatNJgyOjpN5oud9mLVbXw(KAVdrnWyZhPHnyArJ2C3BExIvbVP(t(rxxf8J1LS0YuY1drwL2BD8)FK5)b8iZ1C9)9XHm3FIo3Hn)X58NBDEDwpS332T2sBh1BRsqDCq2UJih8bz360apWbz7oo7fEgY1cS(qwRZ3yKlYML5CD6o4bO6oM44ck)QoWz7HT9KVW5jjB3eE4tlUzRd9IOR9Qmvh5wRx7zRvwJ0uMAq3k0DJ93i3gU050KC5cAO0gXaAZcJxgkFd8Yo1FDODcygWMnAuiCSg7EFwhOHEZA0ph0Gouq)ho45YdcpD1lj6Q3J78O8neoP4rz(psR)pEQ4)nOtE3)gJGkX)Nr6TAv5oklTmpNpeV)7p]] )
+spec:RegisterPack( "Feral Guardian", 20240831, [[Hekili:TVvBVrUTr4FlgbWDDoFB3x8BPW2ajnnfNB61GkJEFts0sC9QATslOKSpFqq)27m8fjkksTRTVGMaeG72BfjNHdhoZdNhX98N7FRVxmPK6)XfZwCYSlwoF6SzZoz2j(ELpVL67TLe9a5E4lzKnWN)eLrsBc)7vewCcjd7)50CsmQNI8kwemgFV7Qssl)qM)D2u(YtaLxSLg5)X5Z99wNehtfdLwe579P8YF(F0ekNOFKvLe3eElj7HMWFHLKZsktOfn30CZT53FFkTjKe)ijlIcJILxsktYZGVrJY3SHMfZFUOjmbASCnm6Ousb8C(wEhtHfalFvsky2FZ30TUut8nqB)aPavoQ2pL)jVKn8zhh9VWNM7iLn3qIe6BRQP3D1FEdH9qq(QayEdEkjn(4KvxDWDvRwnTaSZa(3Q2Ax2Y15SScUeUgYDuclyvoBZOJABo3JCJYM)E(yE)pNuu2e6rtPrI(LYcsuvqdskP4YSRrLA6AzneEWGTrACajkcueJ7RpgfpF1QG7JIVAUUaSQSaXtbPWSFmgqDfFruc7UbKCkUq4EL2Lg4FoeL5rAanJUb25VEX(RtR6BNIhb7n6gd(8R2waHTPiD5gUpk2P8sY4X33sy3t1cXAxEGSRy0SVKaBbm69Grj3ca9SMsslxpDBu5LlNzx2Ik2JjpssdsYkktYIklme8ehcUctndIwJ2va2bkxj3kNMxvwKetp3UKBivP4GzaIY0Okgy9LxF1PNAF0BRsFKYs(cFRioVCAkjcxI0PLjrpaENd71iKuf9Wvl73iJUHaRVlpX(uOg3XrphLsdelIIRMF8gYNd632I9Zk2XeUIaRiAWQeg8b6h33zUGwcBs3xmfvFj83GvRoCsmLhzTH8FZzbe2g4tgnUIpXtJZFkRUwngTzgJKT0QY0p7OJSB8XuyciPjFbmKawUyJFOHH90AAKToTObQtZUg2xRJ1L1DhahrzpyVtAggZzg7D5vx4k545mYwajRyldxC2hu5AgPyTRqDm7LNE81j07aRXEhiX34l9ENMyptApNSDhNRY2MiSG2zaSH6AJM626(64kgAixUCpt3CJlPGD)NvPLjJG6INn8wqELY)6qFvt(Rdbwk9lafwkXV2iXQL1aWXFla8jnUFdd(jTqNWrQqUNs26ersog3GOYb8Iasvt8obtLdSfi4TG31gLpgaSRiUV65aVz8rlUM9e)tlDxbU9xbUkA0KswbeIKvLcePIWIB7uueNaHXMhhPH9CqzY9WMqWQk2Z11yddICeIRnU(udSOitzLQ0UCoMViKlykNC1X4hb8YWbBFdGyUHeNrl4Rb5463XHInMETH5Lia)9p3gSVyM5SAf5cN88NoSpU8IbIQJLlPl4ekpssSKhAlhSqbLZNdynWPsfRXz1uewYwEoBYwB9wqEesMBr1W)LB6h4y8WuMhLKxveCxIiKe)xUit67RU(kHKt7lYuG4ywCD9bfRZRsJ5zPprjpsp6WdMiN06ALDC04oa5t2w1KhKqvpyTFxos89xeBtaEULIRMPTdMU19cyHyUIQR7mAOvP5vxBXegS4TfWinLu0m42YqpXJTW289ABrbRHdRWHmH(5iiYpG2U7X7sTPjiZcZflIG1UCFhMwhWCDTzGG8zOMU3l)kV0PVnfqXYIE(OEyuFF(F7V0e(J0va4f84)UfY6P10mXRZrd4klUjCJOUTszDBGIauc4JCOl5HZWtZN3egxHizGy5uPS8AmfVINQmXod0kYYh0amhOk(CtiuUwvFpB)ZAWnJDxc7PotAp8G2YAq9HipsKGNskxNKTy)xw0hr3ekgaIOwGJB57fuI9t031HcdIoSPZx9jf9lDzSZhuwFF4Udq)Cz81lENmu0Qm8INK(jXjLTVgOZQRnAzP4Kenl2XIEN5LTJ7H9HE0PdTUlpVFqeusYevCgQvEU6e9guLJO3gwJdSbSHE0rhobDwo6CuxN41PQGlfLF8e9pXWupmknFfpPdGgK5L3(tIKYOy7B4Jag77bfxvasiF5ZNTyPV3tewggV679HnBZzLyw(zIcFWPbFTDftBUX3J)n8DA3wmf8Wh5VTCAg5oaEW)h89IyWrzSeIVxhVTMWlBcxoZ3tOuFpRef9lbZAF12jAABiTruvlDQkJkj0mltkKOEoXPE0l2Vj86RAcp90oLHLyIYFQt5TvWCt4HaQ1GAzBcbTVCyNYWsHlPBUBlJgnGZmma1Gukbmj98fCl1BqwKV3IxUP336at5ChMYGsfFn2KnsXCBAcyw7IACtyDT(i7tqwS0CssMVaHCMJG)GlZlCULBNBSHvoGHSPXzJNSUj6KRSyNqAOTE)bdhxdFhUguJqEUH(IcgY8z7zQXLqW7fAjSc(YCvmxFAmob1C6wOpwbXEZHSuFiASDnhNzs9xJCIdmI(1tlG(moTNBgMyddZFFf2X(LBAcRmPZi15Llc9SZnVnAIVw(vhMrAX4rj8j8C99Alii93XVOFKrLXakX0aEH1ThQPgC7D)zOYEHJI7c0ye8OrTY24RzLeoURqdv4(0hz8eP7s8WTX(15aNk1eUOBonUooXz6bIBXU3Riz8dUgm1VWzW2PsgAps7EbFBRlzTr2o(X9CU3QEC4EiJsxxTUmrax7vsBRoQUq1(xyU4NeaqEw09WlI3y(5Rm97wF8YSmSyXvUpE5uJSifHVJLJu2TbnQtqXiBprrov3aTZGtclBYUK3EFgMgU89IR5lMcTTTfBl)xUPyJ27oDpJVLBY8KFiHobZUtn0oXZ558JIZzmxAXM6nAGYok8LMHoSeNrHM4H6IiKYybiut47asscoYARWo20Jd8ybx7mH3ZspItQTWIwBIv8khhyQJyTgshVnFvTFwIdrITVMeqZLcCe(5dZZARdzIEIPKoUzjW6KY5k0k3BrLUk9Q2ZgzO(TL1o0HAuqHlSQo8pdK6xfh)EKhmPZZHp7FU9FWi)3HmYhJF4)x4Wosz1JIM97h6T9OdyLl53nefWgtYEGfo4j7oJCV5j3JSXo4jpAPAVekQTtylhUsf3zJstS5zovFC7KFM7CIxxs5BIpR9025Ud8Dsu1UlC3KrJSZky)lbB0QTCdQ)AR2A8AfDwTLfn56vZODj26Q36Dw3vN0G7TM3v)RHJVvTy24hniU4A9QwuxE9oqlDhyVFN6jRLZDSN963nZq3DjHI7JvRAVKT2kgutc5f3QGpgObJQGh59fQUQCvQR5geEuUqRwV0Cr0pycMLiPQ(7aUwv3CpF0Dw)r988AkFhG3DxxTlV9C3jAQ73wZFJvxpo(TLRc35u7UkPHoPwpKdQYC)LDNh(K2p2arVQFAb8NS9tiq3N37fgm4vIoWS7Up)Xtyg5eLXz)mcmpgzk)za0lMu7NcG2bmg)CaSskw0OTW9UFAanHVV9rE55nHFBlNZEUsUDWpabjgGVAO)vw7))ue))fzYh(pOav4B2X3ZRAlLLvvuWfX))9]] )
 
 
 spec:RegisterPackSelector( "balance", "Balance (IV)", "|T136096:0|t Balance",

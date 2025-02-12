@@ -4,182 +4,123 @@ local addon, ns = ...
 local Hekili = _G[ addon ]
 local class, state = Hekili.Class, Hekili.State
 
-local priest = Hekili:NewSpecialization( 5 )
+local spec = Hekili:NewSpecialization( 5 )
 
--- TODO: Needs Cata update
 -- Sets
--- spec:RegisterGear( "tier7", 39521, 39530, 39529, 39528, 39523, 40456, 40454, 40459, 40457, 40458 )
--- spec:RegisterGear( "tier9", 48755, 48756, 48757, 48758, 48759, 48078, 48077, 48081, 48079, 48080, 48085, 48086, 48082, 48084, 48083 )
--- spec:RegisterGear( "tier10", 51259, 51257, 51256, 51255, 51258, 51181, 51180, 51182, 51183, 51184, 51741, 51740, 51739, 51738, 51737 )
+spec:RegisterGear( "tier7", 39521, 39530, 39529, 39528, 39523, 40456, 40454, 40459, 40457, 40458 )
+spec:RegisterGear( "tier9", 48755, 48756, 48757, 48758, 48759, 48078, 48077, 48081, 48079, 48080, 48085, 48086, 48082, 48084, 48083 )
+spec:RegisterGear( "tier10", 51259, 51257, 51256, 51255, 51258, 51181, 51180, 51182, 51183, 51184, 51741, 51740, 51739, 51738, 51737 )
 
 -- Resources
-priest:RegisterResource( Enum.PowerType.Mana )
+spec:RegisterResource( Enum.PowerType.Mana )
 
 -- Talents
-priest:RegisterTalents( {
-    -- Discpline
-    improved_power_word_shield    = { 10736, 2, 14748, 14768 },
-    twin_disciplines              = {  8577, 3, 47586, 47587, 47588 },
-    mental_agility                = {  8595, 3, 14520, 14780, 14781 },
-    evangelism                    = {  8593, 2, 81659, 81662 },
-    archangel                     = { 11608, 1, 87151 },
-    inner_sanctum                 = {  8581, 3, 14747, 14770, 14771 },
-    soul_warding                  = {  8607, 2, 63574, 78500 },
-    renewed_hope                  = { 11224, 2, 57470, 57472 },
-    power_infusion                = {  8611, 1, 10060 },
-    atonement                     = { 11812, 2, 14523, 81759 },
-    inner_focus                   = {  8591, 1, 89485 },
-    rapture                       = {  8617, 3, 47535, 47536, 47537 },
-    borrowed_time                 = { 11523, 2, 52795, 52797, 33202 },
-    reflective_shield             = {  8605, 2, 63586, 33202 },
-    strength_of_soul              = { 11813, 2, 89488, 89489 },
-    divine_aegis                  = {  8609, 3, 47509, 47511, 47515 },
-    pain_suppression              = {  8623, 1, 33206 },
-    train_of_thought              = { 12183, 2, 92295, 92297 },
-    focused_will                  = {  8621, 2, 45234, 45243 },
-    grace                         = {  8625, 2, 47516, 47517 },
-    power_word_barrier            = {  8603, 1, 62618 },
-
-    -- Holy
-    improved_renew                = { 10746, 2, 14908, 15020 },
-    empowered_healing             = {  9553, 3, 33158, 33159, 33160 },
-    divine_fury                   = {  9549, 3, 18530, 18531, 18533 },
-    desperate_prayer              = { 11669, 1, 19236 },
-    surge_of_light                = { 11765, 2, 33151, 88690 },
-    inpsiration                   = {  9561, 2, 15357, 15362 },
-    divine_touch                  = {  9593, 2, 63534, 63542 },
-    holy_concentration            = {  9577, 2, 34753, 34859 },
-    lightwell                     = { 11666, 1, 724 },
-    tome_of_light                 = { 12184, 2, 14898, 81625 },
-    rapid_renewal                 = { 14738, 1, 95649 },
-    spirit_of_redemption          = { 11670, 1, 20711 },
-    serendipity                   = {  9573, 2, 63730, 63733 },
-    body_and_soul                 = {  9587, 2, 64127, 64129 },
-    chakra                        = { 11667, 1, 14751 },
-    revelations                   = { 11755, 1, 88627 },
-    blessed_resilience            = { 11672, 2, 33142, 33145 },
-    test_of_faith                 = {  9597, 3, 47558, 47559, 47560 },
-    heavenly_voice                = { 11668, 2, 87430, 87431 },
-    circle_of_healing             = {  9595, 1, 34861 },
-    guardian_spirit               = {  9601, 1, 47788 },
-
-    -- Shadow
-    darkness                      = {  9032, 3, 14259, 15307, 15308 },
-    improved_shadow_word_pain     = {  9036, 2, 15275, 15317 },
-    veiled_shadows                = {  9046, 2, 15274, 15311 },
-    improved_psychic_scream       = {  9040, 2, 15392, 15448 },
-    improved_mind_blast           = {  9042, 3, 15273, 15312, 15313 },
-    improved_devouring_plague     = {  9062, 2, 63625, 63626 },
-    twisted_faith                 = { 11673, 2, 47573, 47577 },
-    shadowform                    = {  9064, 1, 15473 },
-    phantasm                      = {  9068, 2, 47569, 47570 },
-    harnessing_shadows            = { 11606, 2, 33191, 78228 },
-    silence                       = {  9052, 1, 15487 },
-    vampiric_embrace              = {  9054, 1, 15286 },
-    masochism                     = { 11778, 2, 88994, 88995 },
-    mind_melt                     = {  9060, 2, 14910, 33371 },
-    pain_and_suffering            = {  9076, 2, 47580, 47581 },
-    vampiric_touch                = {  9074, 1, 34914 },
-    paralysis                     = { 11663, 2, 87192, 87195 },
-    psychic_horror                = {  9072, 1, 64044 },
-    sin_and_punishment            = { 11605, 2, 87099, 87100 },
-    shadowy_apparition            = {  9070, 3, 78202, 78203, 78204 },
-    dispersion                    = {  9080, 1, 47585 }
+spec:RegisterTalents( {
+    archangel                   = { 11608, 2, 87151, 81700 },
+    atonement                   = { 11812, 2, 81749, 14523 },
+    binding_prayers             = { 413,   2, 15018, 14911 },
+    blessed_recovery            = { 1636,  3, 27811, 27815, 27816 },
+    blessed_resilience          = { 11672, 2, 33145, 33142 },
+    body_and_soul               = { 9587,  2, 64129, 64127 },
+    borrowed_time               = { 1202,  3, 52797, 52798, 52795 },
+    chakra                      = { 348,   1, 14751 },
+    circle_of_healing           = { 1815,  1, 34861 },
+    darkness                    = { 462,   3, 15308, 15307, 15259 },
+    designer_notes              = { 7449,  1, 80556 },
+    desperate_prayer            = { 2829,  1, 19236 },
+    dispersion                  = { 9080,  1, 47585 },
+    divine_accuracy             = { 7578,  2, 81762, 81763 },
+    divine_aegis                = { 8609,  3, 47515, 47509, 47511 },
+    divine_fury                 = { 9549,  3, 18530, 18531, 18533 },
+    divine_providence           = { 1905,  5, 47562, 47567, 47565, 47564, 47566 },
+    divine_touch                = { 1902,  2, 63534, 63542 },
+    empowered_healing           = { 2859,  3, 33158, 33159, 33160 },
+    evangelism                  = { 8593,  2, 81662, 81659 },
+    focused_will                = { 8621,  2, 45243, 45234 },
+    grace                       = { 8625,  2, 47517, 47516 },
+    guardian_spirit             = { 9601,  1, 47788 },
+    harnessed_shadows           = { 1816,  2, 33191, 78228 },
+    heavenly_voice              = { 11668, 2, 87430, 87431 },
+    holy_concentration          = { 1768,  2, 34859, 34753 },
+    holy_reach                  = { 1635,  2, 27789, 27790 },
+    holy_specialization         = { 2823,  5, 15008, 15009, 15010, 15011, 14889 },
+    improved_devouring_plague   = { 9062,  2, 63626, 63625 },
+    improved_healing            = { 408,   2, 14912, 15013 },
+    improved_holy_nova          = { 7580,  2, 81766, 81830 },
+    improved_mind_blast         = { 481,   3, 15312, 15273, 15313 },
+    improved_power_word_shield  = { 10736, 2, 14768, 14748 },
+    improved_psychic_scream     = { 9040,  2, 15448, 15392 },
+    improved_renew              = { 10746, 2, 15020, 14908 },
+    improved_shadow_word_pain   = { 482,   2, 15317, 15275 },
+    inner_focus                 = { 8591,  1, 89485 },
+    inner_sanctum               = { 346,   3, 14747, 14771, 14770 },
+    inspiration                 = { 361,   2, 15362, 14892 },
+    lightwell                   = { 1637,  1, 724 },
+    masochism                   = { 11778, 2, 88995, 88994 },
+    mental_agility              = { 341,   3, 14781, 14520, 14780 },
+    mind_flay                   = { 501,   1, 15407 },
+    mind_melt                   = { 1781,  2, 14910, 33371 },
+    pain_and_suffering          = { 1909,  2, 47581, 47580 },
+    pain_suppression            = { 1774,  1, 33206 },
+    paralysis                   = { 11663, 2, 87192, 87195 },
+    penance                     = { 1897,  1, 47540 },
+    penitence                   = { 7576,  2, 81656, 81657 },
+    phantasm                    = { 1906,  2, 47569, 47570 },
+    power_infusion              = { 8611,  1, 10060 },
+    power_word_barrier          = { 5564,  2, 62618, 14769 },
+    psychic_horror              = { 1908,  1, 64044 },
+    rapid_renewal               = { 14738, 1, 95649 },
+    rapture                     = { 1896,  3, 47537, 47536, 47535 },
+    reflective_shield           = { 2268,  2, 33202, 33201 },
+    renewed_hope                = { 2235,  2, 57472, 57470 },
+    revelations                 = { 11755, 1, 88627 },
+    searing_light               = { 403,   3, 14909, 15017, 78069 },
+    serendipity                 = { 1904,  2, 63733, 63730 },
+    shadowform                  = { 521,   1, 15473 },
+    shadowy_apparition          = { 5791,  3, 78204, 78202, 78203 },
+    silence                     = { 98008, 1, 15487 },
+    sin_and_punishment          = { 11605, 2, 87100, 87099 },
+    soul_warding                = { 351,   3, 78501, 78500, 63574 },
+    spirit_of_redemption        = { 1561,  1, 20711 },
+    spiritual_guidance          = { 2845,  4, 15031, 15028, 15029, 15030 },
+    strength_of_soul            = { 11813, 2, 89488, 89489 },
+    surge_of_light              = { 11765, 2, 88690, 88687 },
+    test_of_faith               = { 1903,  3, 47559, 47558, 47560 },
+    thriving_light              = { 5795,  2, 78245, 78244 },
+    tome_of_light               = { 12184, 2, 81625, 14898 },
+    train_of_thought            = { 12183, 2, 92295, 92297 },
+    twin_disciplines            = { 1898,  3, 47588, 47586, 47587 },
+    twisted_faith               = { 1907,  2, 47577, 47573 },
+    unbreakable_will            = { 342,   5, 14788, 14789, 14522, 14790, 14791 },
+    vampiric_embrace            = { 484,   1, 15286 },
+    vampiric_touch              = { 1779,  1, 34914 },
+    veiled_shadows              = { 9046,  2, 15311, 15274 },
 } )
 
--- TODO: WIP Cata update
 -- Auras
-priest:RegisterAuras( {
-    -- Discipline
+spec:RegisterAuras( {
+    -- Attempts to dispel $10872s1 disease every $t1 seconds.
+    abolish_disease = {
+        id = 552,
+        duration = 12,
+        tick_time = 3,
+        max_stack = 1,
+    },
+    absolution = {
+        id = 33167,
+        duration = 3600,
+        max_stack = 1,
 
-    -- Healing increased by 3/6/9/12/15%.
+    },
+    --
     archangel = {
         id = 81700,
         duration = 18,
-        max_stack = 1
-    },
-    -- $s1% spell haste until next spell cast.
-    borrowed_time = {
-        id = 59887,
-        duration = 6,
         max_stack = 1,
-        copy = { 59887, 59888, 59889 }
-    },
-    -- Periodic shadow damage increased by 2/4%.
-    dark_evangelism = {
-        id = 87117,
-        duration = 20,
-        max_stack = 5,
-        copy = { 87117, 87118 }
-    },
-    -- Absorbs damage.
-    divine_aegis = {
-        id = 47753,
-        duration = 12,
-        max_stack = 1,
-        copy = { 47753, 54704 }
-    },
-    -- Increases the damage done by your Smite, Holy Fire and Penance by 2/4% and reduces the mana cost of those spells by 3/6%.
-    evangelism = {
-        id = 81660,
-        duration = 20,
-        max_stack = 5,
-        copy = { 81660, 81661 }
-    },
-    -- All damage taken reduced by 5/10%.
-    focused_will = {
-        id = 45241,
-        duration = 8,
-        max_stack = 1,
-        copy = { 45241, 45242 }
-    },
-    -- Increases all healing received by the Priest by 4/8%.
-    grace = {
-        id = 47930,
-        duration = 15,
-        max_stack = 3,
-        copy = { 47930, 77613 }
-    },
-    -- All damage taken reduced by 40%.
-    pain_suppression = {
-        id = 33206,
-        duration = 8,
-        max_stack = 1,
-    },
-    -- Spell casting speed increased by 20% and mana cost of spells reduced by 20%.
-    power_infusion = {
-        id = 10060,
-        duration = 15,
-        max_stack = 1,
-    },
-
-    --Holy
-
-    -- Your next Heal, Flash Heal, Greater Heal, Binding Heal, Prayer of Healing, Prayer of Mending, Mind Spike or Smite spell will put you into a Chakra state.
-    chakra = {
-        id = 14751,
-        duration = 30,
-        max_stack = 300
-    },
-
-    -- Priest Buffs
-    -- Absorbs damage.
-    power_word_shield = {
-        id = 17,
-        duration = 30,
-        max_stack = 1
-    },
-
-    -- TODO: Stopping point for Cata update, continue from here
-    absolution = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=33172)
-        id = 33172,
-        duration = 3600,
-        max_stack = 1,
-        copy = { 33172, 33171, 33167 },
     },
     -- Prevents you from being critically hit.
     blessed_resilience = {
-        id = 33143,
+        id = 33145,
         duration = 6,
         max_stack = 1,
         copy = { 33143 },
@@ -191,10 +132,17 @@ priest:RegisterAuras( {
         max_stack = 1,
         copy = { 65081, 64128 },
     },
+    -- $s1% spell haste until next spell cast.
+    borrowed_time = {
+        id = 52797,
+        duration = 6,
+        max_stack = 1,
+        copy = { 59891, 59890, 59889, 59888, 59887 },
+    },
     -- Causes $s1 damage every $t1 seconds, healing the caster.
     devouring_plague = {
         id = 2944,
-        duration = function() return 24 * spell_haste end,
+        duration = function() return 30 * spell_haste end,
         tick_time = function() return 3 * ( buff.shadowform.up and spell_haste or 1 ) end,
         max_stack = 1,
 
@@ -209,9 +157,9 @@ priest:RegisterAuras( {
                 return
             end
 
-            if applied and now - applied < 24 * spell_haste then
+            if applied and now - applied < 30 * spell_haste then
                 t.count = 1
-                t.expires = applied + 24 * spell_haste
+                t.expires = applied + 30 * spell_haste
                 t.applied = applied
                 t.caster = "player"
                 return
@@ -225,14 +173,19 @@ priest:RegisterAuras( {
 
         copy = { 2944, 19276, 19277, 19278, 19279, 19280, 25467, 48299, 48300 },
     },
+    dark_archangel = {
+        id = 87153,
+        duration = 18,
+        max_stack = 1,
+   },
     -- Reduces all damage by $s1%, and you regenerate $49766s1% mana every $60069t1 sec for $d.  Cannot attack or cast spells. Immune to snare and movement impairing effects.
     dispersion = {
         id = 47585,
         duration = 6,
         max_stack = 1,
     },
-    divine_fury = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=18535)
-        id = 18535,
+    divine_fury = { 
+        id = 18533,
         duration = 3600,
         max_stack = 1,
         copy = { 18535, 18534, 18533, 18531, 18530 },
@@ -243,6 +196,23 @@ priest:RegisterAuras( {
         duration = 8,
         max_stack = 1,
         copy = { 64844, 64843 },
+    },
+    dark_evangelism = {
+        id = 87118,
+        duration = 18,
+        max_stack = 5,
+    },
+    -- %d% increased periodic shadow damage.
+    empowered_shadow = {
+        id = 95799,
+        duration = 15,
+        max_stack = 1,
+    },
+    -- Increases the damage done by your Smite, Holy Fire and Penance spells by 4% and reduces the mana cost of those spells by 6%.
+    evangelism = {
+        id = 81661,
+        duration = 18,
+        max_stack = 5,
     },
     -- Reduced threat level.
     fade = {
@@ -262,6 +232,19 @@ priest:RegisterAuras( {
         duration = 6,
         max_stack = 1,
         copy = { 14743, 27828 },
+    },
+    -- All damage reduced by $s1%.  Healing effects increased by $s2%.
+    focused_will = {
+        id = 45242,
+        duration = 8,
+        max_stack = 3,
+        copy = { 45237, 45241, 45242 },
+    },
+    -- Increases all healing received by the Priest by $s2%.
+    grace = {
+        id = 47930,
+        duration = 15,
+        max_stack = 3,
     },
     -- Increased healing received by $s1% and will prevent 1 killing blow.
     guardian_spirit = {
@@ -307,6 +290,12 @@ priest:RegisterAuras( {
         duration = 3600,
         max_stack = 1,
         copy = { 14772, 14750 },
+    },
+    improved_power_word_shield = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=14769)
+        id = 14769,
+        duration = 3600,
+        max_stack = 1,
+        copy = { 14769, 14768, 14748 },
     },
     improved_psychic_scream = { -- TODO: Check Aura (https://wowhead.com/wotlk/spell=15448)
         id = 15448,
@@ -372,6 +361,12 @@ priest:RegisterAuras( {
         max_stack = 1,
         copy = { 15407, 17311, 17312, 17313, 17314, 18807, 25387, 48155, 48156, 58381 },
     },
+    -- Spell haste increased by 5%.
+    mind_quickening = {
+        id = 49868,
+        duration = 3600,
+        max_stack = 1,
+    },
     -- Causing shadow damage to all targets within $49821a1 yards.
     mind_sear = {
         id = 48045,
@@ -386,6 +381,13 @@ priest:RegisterAuras( {
         duration = 15,
         max_stack = 1,
     },
+    -- Chance for the next Mind Blast from the Priest to critically hit increased by 30%.
+    mind_spike = { 
+        id = 73510,
+        duration = 3600,
+        max_stack = 3,
+        copy = { 87178, 87179 },
+    },
     -- Sight granted through target's eyes.
     mind_vision = {
         id = 2096,
@@ -393,12 +395,45 @@ priest:RegisterAuras( {
         max_stack = 1,
         copy = { 2096, 10909 },
     },
+
+    mind_spike = { 
+        id = 73510,
+        duration = 3600,
+        max_stack = 3,
+        copy = { 87178, 87179 },
+    },
     -- Chance to hit with spells on the target increased by $s1%.
     misery = {
         id = 33198,
         duration = 24,
         max_stack = 1,
         copy = { 33196, 33197, 33198 },
+    },
+    -- All damage taken reduced by $s1% and resistance to Dispel mechanics increased by $s2%.
+    pain_suppression = {
+        id = 33206,
+        duration = 8,
+        max_stack = 1,
+    },
+    -- Spell casting speed increased by $s1% and mana cost of spells reduced by $s2%.
+    power_infusion = {
+        id = 10060,
+        duration = 15,
+        max_stack = 1,
+    },
+    -- Absorbs damage.
+    power_word_shield = {
+        id = 17,
+        duration = 30,
+        max_stack = 1,
+        copy = { 17, 592, 600, 3747, 6065, 6066, 10898, 10899, 10900, 10901, 25217, 25218, 27607, 48065, 48066 },
+    },
+
+    power_word_fortitude = {
+        id = 79105,
+        duration = 60,
+        max_stack = 1,
+        copy = { 1244, 1245, 2791, 10937, 10938, 21562, 25389, 48161, 79014, 79105 },
     },
     -- Increases Shadow Resistance by $s1.
     prayer_of_shadow_protection = {
@@ -448,6 +483,12 @@ priest:RegisterAuras( {
         duration = 30,
         max_stack = 1,
         copy = { 9484, 9485, 10955 },
+    },
+    -- Consumed to increase damage done by Mind Blast or Mind Spike.
+    shadow_orb = {
+        id = 77487,
+        duration = 60,
+        max_stack = 3,
     },
     -- Shadow resistance increased by $s1.
     shadow_protection = {
@@ -535,274 +576,70 @@ priest:RegisterAuras( {
     },
 } )
 
--- TODO: Needs Cata update
 -- Glyphs
-priest:RegisterGlyphs( {
-    [55675] = "circle_of_healing",
-    [55677] = "dispel_magic",
-    [63229] = "dispersion",
-    [55684] = "fade",
-    [57985] = "fading",
-    [55678] = "fear_ward",
-    [55679] = "flash_heal",
-    [58009] = "fortitude",
-    [55683] = "holy_nova",
-    [63246] = "hymn_of_hope",
-    [55686] = "inner_fire",
-    [57987] = "levitate",
-    [55673] = "lightwell",
-    [55691] = "mass_dispel",
-    [55688] = "mind_control",
-    [55687] = "mind_flay",
-    [63237] = "mind_sear",
-    [63248] = "pain_suppression",
-    [63235] = "penance",
-    [55672] = "power_word_shield",
-    [55680] = "prayer_of_healing",
-    [55676] = "psychic_scream",
-    [55674] = "renew",
-    [55690] = "scourge_imprisonment",
-    [57986] = "shackle_undead",
-    [55689] = "shadow",
-    [58015] = "shadow_protection",
-    [55682] = "shadow_word_death",
-    [55681] = "shadow_word_pain",
-    [58228] = "shadowfiend",
-    [55692] = "smite",
-    [55685] = "spirit_of_redemption",
+spec:RegisterGlyphs( {
+    [55675]  = "circle_of_healing",
+    [63248]  = "desperation",
+    [55677]  = "dispel_magic",
+    [63229]  = "dispersion",
+    [63246]  = "divine_accuracy",
+    [55684]  = "fade",
+    [57985]  = "fading",
+    [55678]  = "fear_ward",
+    [55679]  = "flash_heal",
+    [58009]  = "fortitude",
+    [63231]  = "guardian_spirit",
+    [55683]  = "holy_nova",
+    [55686]  = "inner_fire",
+    [57987]  = "levitate",
+    [55673]  = "lightwell",
+    [55691]  = "mass_dispel",
+    [55687]  = "mind_flay",
+    [63235]  = "penance",
+    [55689]  = "power_word:_barrier",
+    [55672]  = "power_word:_shield",
+    [55680]  = "prayer_of_healing",
+    [55685]  = "prayer_of_mending",
+    [55688]  = "psychic_horror",
+    [55676]  = "psychic_scream",
+    [55674]  = "renew",
+    [55690]  = "scourge_imprisonment",
+    [57986]  = "shackle_undead",
+    [107906] = "shadow",
+    [58015]  = "shadow_protection",
+    [55682]  = "shadow_word:_death",
+    [55681]  = "shadow_word:_pain",
+    [58228]  = "shadowfiend",
+    [55692]  = "smite",
+    [63237]  = "spirit_tap"
 } )
 
--- TODO: WIP Cata update
 -- Abilities
-priest:RegisterAbilities( {
-    -- Discipline Abilities
-
-    -- Consumes your Evangelism effects, causing an effect depending what type of Evangelism effect is consumed:
-    -- Archangel (Evangelism) - Instantly restores 1% of your total mana and increases your healing done by 3% for each stack. Lasts for 18 sec. 30 sec cooldown.
-    -- Dark Archangel (Dark Evangelism) - Instantly restores 5% of your total mana and increases the damage done by your Mind Flay, Mind Spike, Mind Blast and Shadow Word: Death by 4% for each stack. Lasts for 18 sec. 90 sec cooldown.
+spec:RegisterAbilities( {
+    -- Consumes your Evangelism effects, causing an effect depending on what type of Evangelism effect is consumed:
+    -- Archangel (Evangelism):Instantly restores 1% of your total mana and increases your healing done by 3% for each stack. Lasts for 18 sec. 30 sec cooldown.
+    -- Dark Archangel (Dark Evangelism):Instantly restores 5% of your total mana and increases the damage done by your Mind Flay, Mind Spike, Mind Blast and Shadow Word: Death by 4% for each stack. Lasts for 18 sec. 90 sec cooldown.
     archangel = {
-        id = 81700,
+        id = 87151,
         cast = 0,
-        cooldown = 30,
-        gcd = "off",
+        cooldown = function() return buff.dark_evangelism.up and 90 or 30 end,
+        gcd = "spell",
 
         startsCombat = false,
         texture = 458225,
+        talent = "archangel",
 
         handler = function ()
-            applyBuff( "player", "archangel" )
+            if buff.dark_evangelism.stacks > 0 then
+                    applyBuff("dark_archangel", 18)
+            elseif buff.evangelism.stacks > 0 then
+                    applyBuff("archangel", 18)
+            end
+            removeBuff("dark_evangelism")
+            removeBuff("evangelism")
         end,
+        copy = { 81700, 87151, 87152, 87153 },
     },
-    -- Instantly reduces a friendly target's threat by 5%, and reduces all damage they take by 40% for 8 sec.
-    pain_suppression = {
-        id = 33206,
-        cast = 0,
-        cooldown = 180,
-        gcd = "off",
-
-        spend = function()
-           local base_cost = 0.08;
-
-            if buff.inner_will.up then
-                base_cost = base_cost - ( base_cost * 0.15 )
-            end
-
-            if talent.mental_agility.rank == 1 then
-                base_cost = base_cost - ( base_cost * 0.04 )
-            elseif talent.mental_agility.rank == 2 then
-                base_cost = base_cost - ( base_cost * 0.07 )
-            elseif talent.mental_agility.rank == 3 then
-                base_cost = base_cost - ( base_cost * 0.1 )
-            end
-
-            return base_cost
-        end,
-        spendType = "mana",
-
-        talent = "pain_suppression",
-        startsCombat = false,
-        texture = 135936,
-
-        toggle = "defensives",
-
-        handler = function ()
-            applyBuff( "pain_suppression" )
-        end,
-    },
-    -- Launches a volley of holy light at the target, causing 811 Holy damage to an enemy, or 3274 healing to an ally instantly and every 1 sec for 2 sec.
-    penance = {
-        id = 47540,
-        cast = function() return 2 * haste end,
-        channeled = true,
-        cooldown = function() return glyph.penance.enabled and 10 or 12 end,
-        gcd = "spell",
-
-        spend = function()
-            local base_cost = 0.14;
-
-            if buff.evangelism.up then
-                if talent.envangelism.rank == 1 then
-                    base_cost = base_cost - ( ( base_cost * 0.03 ) * buff.evangelism.stacks )
-                elseif talent.envangelism.rank == 2 then
-                    base_cost = base_cost - ( ( base_cost * 0.06 ) * buff.evangelism.stacks )
-                end
-            end
-
-            if talent.improved_healing.rank == 1 then
-                base_cost = base_cost - ( base_cost * 0.06 )
-            elseif talent.improved_healing.rank == 2 then
-                base_cost = base_cost - ( base_cost * 0.10 )
-            end
-
-            return base_cost
-        end,
-        spendType = "mana",
-
-        talent = "penance",
-        startsCombat = true,
-        texture = 237545,
-
-        start = function ()
-            if buff.evangelism.up then
-                removeBuff( "evangelism" )
-            end
-        end,
-    },
-    -- Infuses the target with power, increasing spell casting speed by 20% and reducing the mana cost of all spells by 20%.  Lasts 15 sec.
-    power_infusion = {
-        id = 10060,
-        cast = 0,
-        cooldown = 120,
-        gcd = "off",
-
-        spend = function()
-            local base_cost = 0.16;
-
-            if buff.inner_will.up then
-                base_cost = base_cost - ( base_cost * 0.15 )
-            end
-
-            if talent.mental_agility.rank == 1 then
-                base_cost = base_cost - ( base_cost * 0.04 )
-            elseif talent.mental_agility.rank == 2 then
-                base_cost = base_cost - ( base_cost * 0.07 )
-            elseif talent.mental_agility.rank == 3 then
-                base_cost = base_cost - ( base_cost * 0.1 )
-            end
-
-            return base_cost
-        end,
-        spendType = "mana",
-
-        talent = "power_infusion",
-        startsCombat = false,
-        texture = 135939,
-
-        toggle = "cooldowns",
-
-        handler = function ()
-            applyBuff( "power_infusion" )
-        end,
-    },
-    -- Summons a holy barrier on the target location that reduces all damage done to friendly targets by 25%.
-    -- While within the barrier, spellcasting will not be interrupted by damage. The barrier lasts for 10 sec.
-    -- Glyph of Power Word: Barrier - and increasing healing received by 10%
-    power_word_barrier = {
-        id = 62618,
-        cast = 0,
-        cooldown = 180,
-        gcd = "off",
-
-        spend = function()
-            local base_cost = 0.3;
-
-            if buff.inner_will.up then
-                base_cost = base_cost - ( base_cost * 0.15 )
-            end
-
-            if talent.mental_agility.rank == 1 then
-                base_cost = base_cost - ( base_cost * 0.04 )
-            elseif talent.mental_agility.rank == 2 then
-                base_cost = base_cost - ( base_cost * 0.07 )
-            elseif talent.mental_agility.rank == 3 then
-                base_cost = base_cost - ( base_cost * 0.1 )
-            end
-
-            return base_cost
-        end,
-        spendType = "mana",
-
-        startsCombat = false,
-        texture = 253400,
-
-        handler = function ()
-        end,
-    },
-
-    -- Holy Abilities
-
-    -- When activated, your next Heal, Flash Heal, Greater Heal, Binding Heal, Prayer of Healing, Prayer of Mending, Mind Spike or Smite will put you into a Chakra state.
-    -- Serenity (Heal, Flash Heal, Greater Heal, Binding Heal) Increases the critical effect chance of your direct healing spells by 10%, and causes your direct heals to refresh the duration of your Renew on the target.
-    -- Sanctuary (Prayer of Healing, Prayer of Mending) Increases the healing done by your area of effect spells and Renew by 15% and reduces the cooldown of your Circle of Healing by 2 sec.
-    -- Chastise (Smite, Mind Spike) Increases your total damage done by Shadow and Holy spells by 15%.
-    chakra = {
-        id = 14751,
-        cast = 0,
-        cooldown = 30,
-        gcd = "off",
-
-        startsCombat = false,
-        texture = 521584,
-
-        handler = function ()
-            applyBuff( "player", "chakra" )
-        end,
-    },
-
-    -- Priest Abilities
-
-    -- Draws on the soul of the friendly target to shield them, absorbing [(((Spell power * 0.87) + 8863) * 1 * 1 * ((1)) * 1)] damage
-    -- Lasts 15 sec.  While the shield holds, spellcasting will not be interrupted by damage. Once shielded, the target cannot be shielded again for 15 sec.
-    -- Glyph of Power Word: Shield - and healing them for 20% of the absorption amount
-    power_word_shield = {
-        id = 17,
-        cast = 0,
-        cooldown = function() return 3 - talent.soul_warding.rank end,
-        gcd = "spell",
-
-        spend = function()
-            local base_cost = 0.34;
-
-            if buff.inner_will.up then
-                base_cost = base_cost - ( base_cost * 0.15 )
-            end
-
-            if talent.mental_agility.rank == 1 then
-                base_cost = base_cost - ( base_cost * 0.04 )
-            elseif talent.mental_agility.rank == 2 then
-                base_cost = base_cost - ( base_cost * 0.07 )
-            elseif talent.mental_agility.rank == 3 then
-                base_cost = base_cost - ( base_cost * 0.1 )
-            end
-
-            return base_cost
-        end,
-        spendType = "mana",
-
-        startsCombat = false,
-        texture = 135940,
-
-        handler = function ()
-            applyBuff( "power_word_shield" )
-            applyDebuff( "target", "weakened_soul" )
-            if talent.body_and_soul.enabled then applyBuff( "target", "body_and_soul" ) end
-            if talent.borrowed_time.enabled then applyBuff( "player", "borrowed_time" ) end
-        end,
-    },
-
-
-
-    -- TODO: Stopping point for Cata update, continue from here
     -- Heals a friendly target and the caster for 1055 to 1352.  Low threat.
     binding_heal = {
         id = 32546,
@@ -1436,9 +1273,90 @@ priest:RegisterAbilities( {
         copy = { 10909 },
     },
 
+
+    -- Instantly reduces a friendly target's threat by 5%, reduces all damage taken by 40% and increases resistance to Dispel mechanics by 65% for 8 sec.
+    pain_suppression = {
+        id = 33206,
+        cast = 0,
+        cooldown = 180,
+        gcd = "spell",
+
+        spend = 0.08,
+        spendType = "mana",
+
+        talent = "pain_suppression",
+        startsCombat = false,
+        texture = 135936,
+
+        toggle = "defensives",
+
+        handler = function ()
+            applyBuff( "pain_suppression" )
+        end,
+    },
+    -- Blasts the target for 1213 Shadowfrost damage, but extinguishes your shadow damage-over-time effects from the target in the process. Mind Spike also increases the critical strike chance of your next Mind Blast on the target by 30%. Stacks up to 3 times.
+    mind_spike = {
+        id = 73510,
+        cast = 0,
+        cooldown = 0,
+        gcd = "spell",
+
+        spend = 0.12,
+        spendType = "mana",
+
+        startsCombat = true,
+        texture = 457655    ,
+
+        handler = function ()
+            applyDebuff("target", "mind_spike")
+        end,
+    },
+    -- Launches a volley of holy light at the target, causing 240 Holy damage to an enemy, or 670 to 756 healing to an ally instantly and every 1 sec for 2 sec.
+    penance = {
+        id = 47540,
+        cast = function() return 2 * haste end,
+        channeled = true,
+        cooldown = function() return glyph.penance.enabled and 10 or 12 end,
+        gcd = "spell",
+
+        spend = 0.16,
+        spendType = "mana",
+
+        talent = "penance",
+        startsCombat = true,
+        texture = 237545,
+
+        start = function ()
+            applyDebuff( "target", "penance" )
+        end,
+    },
+
+
+    -- Infuses the target with power, increasing spell casting speed by 20% and reducing the mana cost of all spells by 20%.  Lasts 15 sec.
+    power_infusion = {
+        id = 10060,
+        cast = 0,
+        cooldown = 120,
+        gcd = "off",
+
+        spend = 0.16,
+        spendType = "mana",
+
+        talent = "power_infusion",
+        startsCombat = false,
+        texture = 135939,
+
+        toggle = "cooldowns",
+
+        handler = function ()
+            applyBuff( "power_infusion" )
+        end,
+    },
+
+
     -- Power infuses the target, increasing their Stamina by 3 for 30 min.
     power_word_fortitude = {
-        id = 21562,
+        id = 79105,
         cast = 0,
         cooldown = 0,
         gcd = "spell",
@@ -1453,30 +1371,31 @@ priest:RegisterAbilities( {
             applyBuff( "power_word_fortitude" )
         end,
 
-        copy = { 1244, 1245, 2791, 10937, 10938, 25389, 48161 },
+        copy = { 1244, 1245, 2791, 10937, 10938, 21562, 25389, 48161, 79014, 79105 },
     },
 
 
-    -- Power infuses all party and raid members, increasing their Stamina by 43 for 1 |4hour:hrs;.
-    prayer_of_fortitude = {
-        id = 21562,
+    -- Draws on the soul of the friendly target to shield them, absorbing 48 damage.  Lasts 30 sec.  While the shield holds, spellcasting will not be interrupted by damage.  Once shielded, the target cannot be shielded again for 15 sec.
+    power_word_shield = {
+        id = 17,
         cast = 0,
-        cooldown = 0,
+        cooldown = 4,
         gcd = "spell",
 
-        spend = function() return glyph.fortitude.enabled and 0.345 or 0.69 end,
+        spend = 0.23,
         spendType = "mana",
 
         startsCombat = false,
-        texture = 135941,
+        texture = 135940,
 
         handler = function ()
-            applyBuff( "prayer_of_fortitude" )
+            -- if glyph.power_word_shield.enabled then health.current = min( health.max, health.current + some_amount_of_healing ) end
+            applyBuff( "power_word_shield" )
+            applyDebuff( "player", "weakened_soul" )
         end,
 
-        copy = { 21564, 25392, 48162 },
+        copy = { 592, 600, 3747, 6065, 6066, 10898, 10899, 10900, 10901, 25217, 25218, 48065, 48066 },
     },
-
 
     -- A powerful prayer heals the friendly target's party members within 30 yards for 312 to 333.
     prayer_of_healing = {
@@ -1689,7 +1608,7 @@ priest:RegisterAbilities( {
     shadow_word_death = {
         id = 32379,
         cast = 0,
-        cooldown = 12,
+        cooldown = 10,
         gcd = "spell",
 
         spend = 0.12,
@@ -1699,6 +1618,7 @@ priest:RegisterAbilities( {
         texture = 136149,
 
         handler = function ()
+
         end,
 
         copy = { 32996, 48157, 48158 },
@@ -1832,15 +1752,15 @@ priest:RegisterAbilities( {
 } )
 
 -- Hooks
-priest:RegisterHook( "reset_precast", function ()
+spec:RegisterHook( "reset_precast", function ()
 end )
 
 -- Expressions
-priest:RegisterStateExpr( "flay_over_blast", function()
+spec:RegisterStateExpr( "flay_over_blast", function()
     local currentSP = GetSpellBonusDamage( 6 ) or 0
     local vttimer = select( 4, GetSpellInfo( 34914 ) ) / 1000
     local currHaste = ( ( 1.5 / vttimer ) - 1 ) * 100
-
+    
     -- Hekili:Debug( "flay_over_blast()["..tostring( rtn ).."]: currentSP["..tostring( currentSP ).."], currHaste["..tostring( currHaste ).."], latency["..tostring( latency ).."] )" )
 
     if set_bonus.tier10_4pc then
@@ -1860,14 +1780,13 @@ priest:RegisterStateExpr( "flay_over_blast", function()
             return false
         end
     end
-
+    
     return true
 end )
 
 
--- TODO: Potion needs update for Cata
 -- Options
-priest:RegisterOptions( {
+spec:RegisterOptions( {
     enabled = true,
 
     aoe = 2,
@@ -1880,7 +1799,7 @@ priest:RegisterOptions( {
     damage = true,
     damageExpiration = 3,
 
-    potion = "wild_magic",
+    potion = "volcanic",
 
     package = "Shadow",
     package1 = "Shadow",
@@ -1889,54 +1808,45 @@ priest:RegisterOptions( {
 } )
 
 
--- TODO: Needs update for Cata
+-- Packs
+spec:RegisterPack( "Shadow", 20240719, [[Hekili:nRvBVXTns4FlbfNrCIJoVBZ2EPNxd4u3G6a00GkFx(qrLexjU7sy92jrzxdyOF73md17l5k59SBoyKyVIKZmCE75rCPZmNRDSdysUZNMF683E63p7DwZ)2fZp9Do2Y7t5o2Pm)ByBG)iMfb)V9wwqYD4JVpmHfGlppPiZhg6ljFXweLx6DuPh83)mhg2EvHiuEvSZk9QzoS8uUVZNw4yVveeWvZKN77yF9wbim8FSsVkZO0lzn8zFPijU0luKlHHxNKv69Z8BeHclWYYswlcb75B(MspL5w695mbpxw(r8zVNLZdabftM5qtU8JQz95m(pMeTIjFZfK2YHhx69tXsEwTyb9gbgiyqXjsWQcZG1Fp8eqYcqzkZm3knJ7tI61l)75nR8eX6LRkwV2Q9rwWVJj98JmWA9(CYDO2(sswWpu69HKmPqweW7Qtqf3Y1RQuC1U3bl2DD9sBuQUbhQ(RIJr1)br2uvPaxH7AybOIErrAhP9VzrPImHp4eJwLX8NQmVTADUC1Y6kzBjldwEZ0l9Uti3w69lIyicBNkUXGqJGj4MRgNI4hwOD6buBWW8bltMu6DrYpv6LLizQSyulZH8rq5rjORMhZJG0vqT4NaZoNh3tNzfXUQp5ILaNGLMlzjKRr5kDRKX5lNtQ)s(AwrOuP)Cr8Mq(BaF3gUSJLmMgWcivXHnjHsVRReXV1ic14)AkNsDY5)NcEmgQPA08QLvP52CJUXRkVECvTUCl8hrm0XhWr3Rj)IvE)alLNOwIv7tTkspQ(PQ4KQiif0q3Xc43cT1a71nnKTPO36AYiLjf(BTQZflIIWWzvcKGJBjCVa5luxSQmjmr3JrdwnaNLfwLBr721InBhUVYBLkTXs5slswhjfr8ZwOsHJ4GJn2)(Ap6hcz3RI5OhusEX6wIvDv(m(qn(W1WsrnThFLPHY4O2YpBJFWRdHM(ObHM3fPP4(uNbu5OQ9sOlvZ2VvhDdUAmTDsTADe5QwgBWeuiNnEtRb9RzRYRcnxYYUb8N3YI3WHcGiAD(3KB2tHDpYksLU97c4MKTYIw75lNDKk1cKTlVr01JUG2tV8Ww7XQ0GLVC(RqV(CRfVszOwnMOvqrgvKECDv6VqE(2A3b(S3hsFaJmd8qy5h7wMiKTkKRZLScx6jA8evHMFJZu5cTGcxJ1sDYdQT2kgaRskQ6EX)ZueqQVw7xs2jVDqTADQP(rLc)BCrhzFJ8Y6EbqYk1m4GnZHDv6yO70WzGPUZ49nwnboMI5eqgke6fBkkrR(FLd7PlY83sjwak6wE8EkcuzarS)e5rr1lQg0xMCnm4wg2HlhmAHVa7q36K6BeSAf2KPOn9E5IJE5EJMNV4OrCINV44hDp6j2)T1)nOV2LCMSkHM6Qxd3IQzfpeN58f)nWDXzH4ej8FwmtndCCZTadqzJ2HsOwkzyL6lpB(IhEafJ6dN2AExkaM2z5nuoA11T8S71PXGMvGQQrOZo1q71jcCVBrIkhQFxNCfdD)KKqfjkZquVy)Phio0dpmwzgnPATz1wF0DcnDojgCgBCAda6nbEA7rLle3ojKXx6TOLKxZ(c4V1WFbeGgUClgffLq6bEEI0wAw59ZW3tlkLfSduR)9(HC3kHTC2jqDVB)Nrqx5CjcNMdCEL5UcG)ycFukcMgVFZTlmawCqBxvYwVsY7GwK4BtI9TctW(884KInBh6AgGY8e4yom4PJQk7X)ggZnqWp3aGxBR3NCenLprhK2(2Xp94CtNGsNsSXyOqTmFCKOFCLzgOoI7w8T2EIPE)8aq1uk10KlKNNx3K7TgBYnzOSJ63b8S32bBB2cdnEnW7zq)vh7BvyBnhj135yFhllgtCRp8PQZssTJJe55ujtErAAc(se0l1sVjb2usczT3av9wLELExv5iPZCicynWjpfEefCfEBAMijtiPx8ZpSiaFHFUaDM)aaZ49MsVFNIAxj5r5)XjiPmbXqUz2S47B1Af3fizleODjdBLlsXP(vlRv6)KcNvQ5ALik9M9hvH02hnVJMvTjB2r1Pn1tL8g0JIlIwb5eWmYdtKwLF8Qi0HHpaskubKQtVdg0XMvi3Mare7cGVrCro4)PbXtxecBWV(eDqL8ySEoW59WJjH4y3jEINAyMiv98dfp2XgKbupkykD0M8v6DomrhjKVyWwgwncYQlAaUjS3bJWXErxDQR1jD8KJuXx6DM5500cDGt6PMkb6C(wdoN(4sphUg9yPDDmgFDpuk7IPcr8LMwBnkPEp6F5mvqp)Bn45hIOoWKFkif8yctMia0nqzMeaUrxSVEbeW(EAgmrsdD3r7sraTIVBGv0o)9CUutTsgWVl9EneJvy4o2Djj4yxZsyWEhPtmyR)KZJb36F)eAas466mMVASq6gI2HSb51NVGcqd77FgjLhEqP4MzpJad(hd8fJGc1JCIoymj8JnKbpkMhEA27tDhYHP31f9IMm1ENEo5HEH5S4DMHMtsFWm2580hhKLoiMb7(hZH7mHdGFGVO9aFiWcc14SkcbMW8mvuEONt)ZCtM9GHSl1MjtKy4j7RphtZ(qxR(El9LqhIbTMPdmuHBpJ8dQuqDhROAwqf)XDJOljXoV07vT(N5wlOpRCgAorDqgd7qR1Wg9y8hp1554l1qhA2xhmvtaldjpQNaZb)LjOPU6WjtQdu4RevSNmgxVBQGC6(Qh0MmbcD2Pg8snFVa6Op88)TuStAQH2hQUhhrnmgjR586PoAernZJj)Jj8)NeiqtWBKMNYB4(xgbVPXBBh6zZpL2kMWMB)Yn0ThMWxwsxZQpVqLInbLo9o7tK72b99PSlu64n(i8q0ppAwC3jVNVtL2jESI3BG6AQSpYVvj)jzrdjvn97VJbGOMBSJo(N9RZ(F9280UFgCtB275pbDCMRoAmx1TXdpCmn8p7zRt5Q)ShZPJ2O22s8g2vDrQ()X4uT(1Db30wXn1lz3ogJXRq3(ELG2BiNwJzFx5UbLSkgtM6Ym8wZPvBJFL80QZHKY7xAm(vYt7BYkB(X5)o]] )
+
+
+spec:RegisterPackSelector( "discipline", "none", "|T135987:0|t Discipline",
+    "If you have spent more points in |T135987:0|t Discipline than in any other tree, this priority will be automatically selected for you.",
+    -- Criteria
+    -- The pack selector hook passes the points spent in tab1 (Discipline), tab2 (Holy), and tab3 (Shadow).
+    function( tab1, tab2, tab3 )
+        -- If we spent the most points in Shadow, then swap to this package.
+        -- We could also reference anything else we wanted; e.g., talent.shadowform.enabled or something else entirely.
+        return tab1 > max( tab2, tab3 )
+    end )
+
+
+spec:RegisterPackSelector( "holy", "none", "|T237542:0|t Holy",
+    "If you have spent more points in |T237542:0|t Holy than in any other tree, this priority will be automatically selected for you.",
+    -- Criteria
+    -- The pack selector hook passes the points spent in tab1 (Discipline), tab2 (Holy), and tab3 (Shadow).
+    function( tab1, tab2, tab3 )
+        -- If we spent the most points in Shadow, then swap to this package.
+        -- We could also reference anything else we wanted; e.g., talent.shadowform.enabled or something else entirely.
+        return tab2 > max( tab1, tab3 )
+    end )
+
+spec:RegisterPackSelector( "shadow", "Shadow", "|T136207:0|t Shadow",
+    "If you have spent more points in |T136207:0|t Shadow than in any other tree, this priority will be automatically selected for you.",
+    -- Criteria
+    -- The pack selector hook passes the points spent in tab1 (Discipline), tab2 (Holy), and tab3 (Shadow).
+    function( tab1, tab2, tab3 )
+        -- If we spent the most points in Shadow, then swap to this package.
+        -- We could also reference anything else we wanted; e.g., talent.shadowform.enabled or something else entirely.
+        return tab3 > max( tab1, tab2 )
+    end )
+
 -- Settings
-priest:RegisterSetting( "dots_in_aoe", false, {
+spec:RegisterSetting( "dots_in_aoe", true, {
     type = "toggle",
     name = "|T252997:0|t|T136207:0|t|T135978:0|t Apply DoTs in AOE",
     desc = "When enabled, the Shadow priority will recommend applying DoTs to your current target in multi-target scenarios before channeling |T237565:0|t Mind Sear.",
     width = "full",
 } )
-
-priest:RegisterSetting( "optimize_mind_blast", false, {
-    type = "toggle",
-    name = "|T136224:0|t Mind Blast: Optimize Use",
-    desc = "When enabled, the Shadow priority will only recommend |T136224:0|t Mind Blast below an internally-calculated haste threshold (vs. using |T136208:0|t Mind Flay).",
-    width = "full",
-} )
-
-priest:RegisterSetting( "min_shadowfiend_mana", 25, {
-    type = "range",
-    name = "|T136199:0|t Shadowfiend Mana Threshold",
-    desc = "If set above zero, |T136199:0|t Shadowfiend cannot be recommended until your mana falls below this percentage.",
-    width = "full",
-    min = 0,
-    max = 100,
-    step = 1,
-} )
-
-
--- TODO: Needs update for Cata
--- Packs
--- priest:RegisterPack( "Shadow", 20231124, [[Hekili:vN1wVTTnu4FlbfWWg1vXxAU0bR8W2EynpemaTNLeTeDmr0nirfpdeOF77qsDHsIK2UnDffOOjrMN7NZ35JYUlD)hxNqef7(0QfRwVC5QVyT8(f3S4wxh6XmSRtgk4f0ZWVKGIH)3zpkm9a7XhJsrHmXlslZdGp6q6HcsCH1Ze6(YTwK0k)jv(Wt3JrHwbPXxFiLg9IRZ2sse9RjUBvz6pV6lGkZWbUpDJRZEsyiwCsCrqJ5R8)7CcUGw5NLtsZj0Jv(re2FVlnVY)VWVqIiUoShvW9qsYZry43EIhV4e02iCO7V76eacJZjixNxrWpGhBrjXypAQxibx5VXUYhfqjPjwXKKqVDrOJwHL5i2JQ8F7Tk)Pv(XPVcwGhUxv5hMsTcXVczf4HEzrONlXw54yejPOYFMRJqHSqQ)HCPqQqRdUTC3olssco3BxAqzHvzwRdWmzbp14Dinp0ldSvNj3u5V06gU7z(GpOkAPKGx8yjLk)pcPzOGLeCSxC0EwwaS(cZWpu5VOtvcFBhbNeYu2N1QmipZCSM0(u()4POMWdJyffRck0ax5drMidOXlGp)o4aZAtPg0f7WRnOSnT6A2WiRlRZcVB0gES60RO4msoja0BzW(UQKCvamvaQGwxFmgER78L(AM5j3AkrBQH2C38DxAZG9W4bQeSolV0xH((Tri2qoRcXlp54SiCcPyFmoH2RFF94guUWmN6EZJy67F6uO0yitJFzGgla0lhZzT(LA9WfmaOfwR6m9beHhflxOYO1yb6AD(u789GtiL0NDI(q5XUrGfb7rqQjQ5Zn5lSiB6z4pAaDAZd6H0VQUnPUArYXCmtJtjlxmQkdYXnKEOzWqxKIBdwC82CuGq96boVQzdJkixWlHJLxMr9i7GZQynXewjR4b7vC7OhtDOrKHScXikhPyPEqRHYRcryPEKMyucYkddCjsOI2JBLYzHeGuqEb73z1Dq57qLruvl1Bejaff5j(dpgxabJapbrgsIO)HxvBKOSa7bUtCHS(AwQ1COSuXp7DIHzvgDLCsM4K7rc(b1B3sZJR8ja9H8uAnrITLpdJePL0oZS)ilEZW4qigcWrybPdHtMUBN3ZbHSy34EeMYEf7HtWXaHj(22LDMiVmrB(jicaaXQ2nCosxZ4IxPYYXa5VTiJ1QUuZGC3taYF8wmqRJXsudAntol4NjNbfQqcumWEfSjqkxi(Kl)ZYYrhHbN0DYFSCpOKOMj7iux6bqB85hWdPeAziwRf7Fc52TXkXm3OHGE8vy18a1cVPVhIJUzg862tnFqBBOmscFu7kacC)auVcmk3Cz(7IYYWsQce3GJqS4rr5pJH7xaHZfHbd4C)RxFv4CNs4(gcq)uy3BSd7BGk)W(RrTtcUOksUNkF9dHRSbCVrm5)g85FrU(YP508Rhj)3xwHdP()otkCij)lm3EnS1S51siHPOcMDTgywd8Rplxq24Vl8x1J7FE8x1VZ(S4VAG(8fXFLZ)uXYW0m2v5OY9fISm73IaNGFhpmpnrZHzbM)fwghFSPnE9IfTibc0h5cexH1S0KFSInQN2vQv)EmkIU3klGYNlxTq2i4)fhusXEz7rfcgHGgFTov08Q)(m7cD5Sybqk)ACgq0bhYX8e2w8(9kSQEKXNmDhH5eFO59a(Bv(1VyWh)a)noEoVhs(z7ZUS6r4HCTwZyT6rH5lSAjX(r7R74CoNSZwfnu1Y1J(yROJ5Jorpxu1kwffXw9RLe6qZmGIQsl1b(1Q)ren3SCHAHhIWXuXvqtRMyIx3RRi)P42EThfoWWB3nN1UzZgRKpv7n6KFyJUbfFbxndoFNk63dC1WMaPOcoSMRYnx6MC2lLfyWvReHMGanZC9XVF40IkUowtY8RSCK)FJYHpcWU6snwSShVqjMZfclHsmNp3Bpvh(Zea7z2BVng15eMOhgrTrgHTSz1IMi4p4PIoLksnGABxDPinzFVcbgIXZRMgFLCAmkBz28Eu(SxoFenq77MlVVZ246oUViwknzQjU9BGlamX0bEWw40Qi()XAcYZuezsC4zoJQf(pSqHC9PJFEPLD26jY34JBAjwmrPVyVwBq0Luox35QAg6tMovlBA7B04i3DdmhOxoWtvk4gqUzAu5svz6owVAlq2DjTPdOz)2B6PyVzTQoI(laUAmt6lX51Sq4surVb(te(xVAsZ40qObv9nDJ1x2i7Pkc1(Wj6u5ewzQt7PvbDP)WT0p5htIQ6g7BBXvDQ3t0iUyVHgBPS)DmqtZ3wkmouN8nIVotH1LQe9jDuN(bv))j8yRFDHWJdKtcr6NjAJc)Ba897o0SX2QZC7B)MJF8iGT2tQ1Ba9)HflfcZ(wRAYN6IXn2lSwnVahy8uNq5Q)s7MmQpV7lSBI(A8g7P1cQ7RPRDkH73t1RQpDcfziJ)DTZzCV9fVZrfC0fTyyeWVsabTa)gNA0FyJa)WD7lP7tZDDCkHhNuwuWVGU7)n]] )
-
-
--- priest:RegisterPackSelector( "discipline", "none", "|T135987:0|t Discipline",
---     "If you have spent more points in |T135987:0|t Discipline than in any other tree, this priority will be automatically selected for you.",
---     function( tab1, tab2, tab3 )
---         return tab3 > max( tab1, tab2 )
---     end )
-
-
--- priest:RegisterPackSelector( "holy", "none", "|T237542:0|t Holy",
---     "If you have spent more points in |T237542:0|t Holy than in any other tree, this priority will be automatically selected for you.",
---     function( tab1, tab2, tab3 )
---         return tab3 > max( tab1, tab2 )
---     end )
-
--- priest:RegisterPackSelector( "shadow", "Shadow", "|T136207:0|t Shadow",
---     "If you have spent more points in |T136207:0|t Shadow than in any other tree, this priority will be automatically selected for you.",
---     function( tab1, tab2, tab3 )
---         return tab3 > max( tab1, tab2 )
---     end )
-

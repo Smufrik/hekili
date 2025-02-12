@@ -270,9 +270,9 @@ local HekiliSpecMixin = {
         data.max_stack = data.max_stack or 1
 
         -- This is a shared buff that can come from anyone, give it a special generator.
-        if data.shared then
+        --[[ if data.shared then
             a.generate = Aura_DetectSharedAura
-        end
+        end ]]
 
         for element, value in pairs( data ) do
             if type( value ) == 'function' then
@@ -486,10 +486,12 @@ local HekiliSpecMixin = {
             potionItem:ContinueOnItemLoad( function()
                 if not data.name then data.name = potionItem:GetItemName() end
                 if not data.link then data.link = potionItem:GetItemLink() end
+                
 
-                class.potionList[ potion ] = link
+                class.potionList[ potion ] = data.link
                 return true
             end )
+
         end
 
         if data.buff and data.aura then
@@ -1597,7 +1599,31 @@ all:RegisterAuras( {
         duration = function () return 21 + ( 4 * talent.epidemic.rank ) end,
         tick_time = 3,
         max_stack = 1,
-        shared = "target",
+    },
+
+    -- Deals Frost damage over $d.  Reduces melee and ranged attack speed.
+    frost_fever_shared = {
+        --id = 55095,
+        duration = function () return 21 + ( 4 * talent.epidemic.rank ) end,
+        tick_time = 3,
+        max_stack = 1,
+        generate = function ( t )
+            local name, _, count, _, duration, expires, caster = FindUnitDebuffByID( "target", 55095 )
+
+            if name then
+                t.name = name
+                t.count = 1
+                t.expires = expires
+                t.applied = expires - duration
+                t.caster = caster
+                return
+            end
+
+            t.count = 0
+            t.expires = 0
+            t.applied = 0
+            t.caster = "nobody"
+        end,
     },
 
     -- Movement speed slowed by $s1% and attack speed slowed by $s2%.
@@ -1626,7 +1652,7 @@ all:RegisterAuras( {
     },
 
     attack_speed_reduction = {
-        alias = { "earth_shock", "frost_fever", "infected_wounds", "judgements_of_the_just", "thunder_clap" },
+        alias = { "earth_shock", "frost_fever_shared", "infected_wounds", "judgements_of_the_just", "thunder_clap" },
         aliasType = "debuff",
         aliasMode = "longest"
     },
@@ -1750,7 +1776,7 @@ all:RegisterAuras( {
     -- Expose Armor.
     expose_armor = {
         id = 8647,
-        duration = function() return 10 * combo_points.current + ( glyph.expose_armor.enabled and 12 or 0 ) end,
+        duration = function() return UnitClassBase( 'player' ) ~= 'ROGUE' and 10 or 10 * combo_points.current + ( glyph.expose_armor.enabled and 12 or 0 ) end,
         max_stack = 1,
         shared = "target",
     },
@@ -2470,12 +2496,40 @@ all:RegisterAuras( {
 -- TODO: Needs Catalcysm potions
 -- TODO: Something about potions is not currently working, needs investigation.
 all:RegisterPotions( {
+    volcanic = {
+        item = 58091,
+        buff = "volcanic_power",
+        aura = {
+            id = 79476,
+            duration = 25,
+            max_stack = 1,
+        }
+    },
+    
     speed = {
         item = 40211,
         buff = "speed",
         aura = {
             id = 53908,
             duration = 15,
+            max_stack = 1
+        }
+    },
+    golemblood = {
+        item = 58146,
+        buff = "golems_strength",
+        aura = {
+            id = 79634,
+            duration = 25,
+            max_stack = 1
+        }
+    },
+    tolvir = {
+        item = 58145,
+        buff = "tolvir_agility",
+        aura = {
+            id = 79633,
+            duration = 25,
             max_stack = 1
         }
     },
@@ -2718,6 +2772,7 @@ all:RegisterAuras( {
         duration = 25,
         max_stack = 1,
     },
+
 } )
 
 
@@ -3215,7 +3270,56 @@ all:RegisterAbilities( {
             gain( 4200, "mana" )
         end,
     },
+    volcanic_potion = {
+        name = function() return GetItemInfo( 58091 ) end,
+        cast = 0,
+        cooldown = 60,
+        gcd = "off",
 
+        startsCombat = false,
+
+        item = 58091,
+        bagItem = true,
+
+        usable = function ()
+            return GetItemCount( 58091 ) > 0, "requires volcanic_potion in bags"
+        end,
+
+        readyTime = function ()
+            local start, duration = GetItemCooldown( 58091 )
+            return max( 0, start + duration - query_time )
+        end,
+
+        handler = function()
+            applyBuff( "volcanic_power" )
+        end,
+    },
+
+    tol_vir_potion = {
+        name = function() return GetItemInfo( 58145 ) end,
+        cast = 0,
+        cooldown = 60,
+        gcd = "off",
+
+        startsCombat = false,
+
+        item = 58145,
+        bagItem = true,
+
+        usable = function ()
+            return GetItemCount( 58145 ) > 0, "requires tol_vir_potion in bags"
+        end,
+
+        readyTime = function ()
+            local start, duration = GetItemCooldown( 58145 )
+            return max( 0, start + duration - query_time )
+        end,
+
+        handler = function()
+            applyBuff( "tol_vir_potion" )
+        end,
+    },
+    
     endless_mana_potion = {
         name = function() return GetItemInfo( 43570 ) end,
         cast = 0,
@@ -3605,6 +3709,20 @@ all:RegisterAbility( "dark_matter", {
 
     item = 46038,
     aura = 65024
+})
+all:RegisterAura("enigma", {
+    id = 92123,
+    duration = 15,
+    max_stack = 1
+})
+all:RegisterAbility("unsolvable_riddle", {
+    cast = 0,
+    cooldown = 45,
+    gcd = "off",
+    unlisted = false,
+
+    item = 68709,
+    aura = 92123
 })
 all:RegisterAura( "dark_matter", {
     id = 65024,
@@ -4108,6 +4226,28 @@ do
     } )
 end
 
+    all:RegisterAura( "swordguard_embroidery", {
+        id = 75176,
+        duration = 15,
+        max_stack = 1
+} )
+   
+
+    all:RegisterAbility( "swordguard_embroidery", {
+        id = 75176,
+        cast = 0,
+        cooldown = 45,
+        gcd = "off",
+
+        toggle = "cooldowns",
+        item = 0,
+        itemKey = "swordguard_embroidery",
+        texture = 236282,
+
+        handler = function ()
+            applyBuff( "swordguard_embroidery" )
+        end
+    } )
 -- Dribbling Inkpod
 all:RegisterAura( "conductive_ink", {
     id = 302565,
@@ -4211,8 +4351,69 @@ if Hekili.IsClassic() then
             applyBuff("hyperspeed_acceleration")
         end
     } )
+    -- Increases your primary_stat by 480 for 10 sec.
+    all:RegisterAura( "synapse_springs", {
+        id = 96228,
+        duration = 15,
+        max_stack = 1,
+        copy = {96228, 96229, 96230}
+    })
+    -- Increases your Intellect, Agility, or Strength by 480 for 10 sec.  Your highest stat is always chosen.
+    all:RegisterAbility( "synapse_springs", {
+        id = 82174,
+        known = function () return tinker.hand.spell == 82174 end,
+        cast = 0,
+        cooldown = 60,
+        gcd = "off",
+
+        item = function() return tinker.hand.spell == 82174 and tinker.hand.item or 0 end,
+        itemKey = "synapse_springs",
+
+        texture = function() return tinker.hand.spell == 82174 and tinker.hand.texture or 0 end,
+        startsCombat = true,
+
+        toggle = "cooldowns",
+
+        usable = function ()
+            return tinker.hand.spell == 82174
+        end,
+
+        handler = function()
+            applyBuff("synapse_springs")
+        end
+    } )
 end
 
+if Hekili.IsClassic( "synapse_springs" ) then
+    all:RegisterAura( "synapse_springs", {
+        id = 82174,
+        duration = 10,
+        max_stack = 1
+    })
+    all:RegisterAbility( "synapse_springs", {
+        id = 82174,
+        known = function () return tinker.hand.spell == 82174 end,
+        cast = 0,
+        cooldown = 60,
+        gcd = "off",
+
+        item = function() return tinker.hand.spell == 82174 and tinker.hand.item or 0 end,
+        itemKey = "synapse_springs",
+
+        texture = function() return tinker.hand.spell == 82174 and tinker.hand.texture or 0 end,
+        startsCombat = true,
+
+        toggle = "cooldowns",
+
+        usable = function ()
+            return tinker.hand.spell == 82174
+        end,
+
+        handler = function()
+            applyBuff("synapse_springs")
+        end
+    } )
+end
 
 -- Mechagon
 do

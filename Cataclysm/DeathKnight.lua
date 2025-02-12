@@ -4,6 +4,9 @@ local addon, ns = ...
 local Hekili = _G[ addon ]
 local class, state = Hekili.Class, Hekili.State
 
+local roundUp = ns.roundUp
+local strformat = string.format
+
 local spec = Hekili:NewSpecialization( 6 )
 
 -- TODO
@@ -12,6 +15,216 @@ local spec = Hekili:NewSpecialization( 6 )
 
 spec:RegisterResource( Enum.PowerType.RunicPower )
 
+local death_rune_tracker = { 0, 0, 0, 0, 0, 0}
+spec:RegisterStateExpr("get_death_rune_tracker", function()
+    return death_rune_tracker
+end)
+
+spec:RegisterStateTable( "death_runes", setmetatable( {
+    state = {},
+
+    reset = function()
+        for i = 1, 6 do
+            local start, duration, ready = GetRuneCooldown( i )
+            local type = GetRuneType( i )
+            local expiry = ready and 0 or start + duration
+            state.death_runes.state[i] = {
+                type = type,
+                start = start,
+                duration = duration,
+                ready = ready,
+                expiry = expiry
+            }
+        end
+    end,
+
+    spend = function(neededRunes)
+        local usedRunes, err = state.death_runes.getRunesForRequirement(neededRunes)
+        if not usedRunes then
+            --print("Error:", err)
+            return
+        end
+
+        local runeMapping = {
+            blood = {1, 2},
+            unholy = {3, 4},
+            frost = {5, 6}
+        }
+
+        for _, runeIndex in ipairs(usedRunes) do
+            local rune = state.death_runes.state[runeIndex]
+            rune.ready = false
+
+            -- Determine other rune in the group
+            local otherRuneIndex
+            for type, runes in pairs(runeMapping) do
+                if runes[1] == runeIndex then
+                    otherRuneIndex = runes[2]
+                    break
+                elseif runes[2] == runeIndex then
+                    otherRuneIndex = runes[1]
+                    break
+                end
+            end
+
+            local otherRune = state.death_runes.state[otherRuneIndex]
+            local expiryTime = (otherRune.expiry > 0 and otherRune.expiry or state.query_time) + rune.duration
+            rune.expiry = expiryTime
+        end
+    end,
+
+    getActiveDeathRunes = function()
+        local activeRunes = {}
+        local state_array = state.death_runes.state
+        for i = 1, #state_array do
+            if state_array[i].type == 4 and state_array[i].expiry < state.query_time then
+                table.insert(activeRunes, i)
+            end
+        end
+        return activeRunes
+    end,
+
+    getLeftmostActiveDeathRune = function()
+        local activeRunes = state.death_runes.getActiveDeathRunes()
+        return #activeRunes > 0 and activeRunes[1] or nil
+    end,
+
+    getActiveRunes = function()
+        local activeRunes = {}
+        local state_array = state.death_runes.state
+        for i = 1, #state_array do
+            if state_array[i].expiry < state.query_time then
+                table.insert(activeRunes, i)
+            end
+        end
+        return activeRunes
+    end,
+
+    getRunesForRequirement = function(neededRunes)
+        local bloodNeeded, frostNeeded, unholyNeeded = unpack(neededRunes)
+        local runeMapping = {
+            blood = {1, 2},
+            unholy = {3, 4},
+            frost = {5, 6},
+            any = {1, 2, 3, 4, 5, 6}
+        }
+        
+        local activeRunes = state.death_runes.getActiveRunes()
+        local usedRunes = {}
+        local usedDeathRunes = {}
+
+        local function useRunes(runetype, needed)
+            local runes = runeMapping[runetype]
+            for _, runeIndex in ipairs(runes) do
+                if needed == 0 then break end
+                if state.death_runes.state[runeIndex].expiry < state.query_time and state.death_runes.state[runeIndex].type ~= 4 then
+                    table.insert(usedRunes, runeIndex)
+                    needed = needed - 1
+                end
+            end
+            return needed
+        end
+
+        -- Use specific runes first
+        bloodNeeded = useRunes("blood", bloodNeeded)
+        frostNeeded = useRunes("frost", frostNeeded)
+        unholyNeeded = useRunes("unholy", unholyNeeded)
+
+        -- Use death runes if needed
+        for _, runeIndex in ipairs(activeRunes) do
+            if bloodNeeded == 0 and frostNeeded == 0 and unholyNeeded == 0 then break end
+            if state.death_runes.state[runeIndex].type == 4 and not usedDeathRunes[runeIndex] then
+                if bloodNeeded > 0 then
+                    table.insert(usedRunes, runeIndex)
+                    bloodNeeded = bloodNeeded - 1
+                elseif frostNeeded > 0 then
+                    table.insert(usedRunes, runeIndex)
+                    frostNeeded = frostNeeded - 1
+                elseif unholyNeeded > 0 then
+                    table.insert(usedRunes, runeIndex)
+                    unholyNeeded = unholyNeeded - 1
+                end
+                usedDeathRunes[runeIndex] = true
+            end
+        end
+
+        --if bloodNeeded > 0 or frostNeeded > 0 or unholyNeeded > 0 then
+        --    return false, "Not enough active runes to fulfill the requirements"
+        --end
+
+        return usedRunes
+    end,
+
+},{
+    __index = function( t, k )
+        local countDeathRunes = function()
+            local state_array = t.state
+            local count = 0
+            for i = 1, #state_array do
+                if state_array[i].type == 4 and state_array[i].expiry < state.query_time then
+                    count = count + 1
+                end
+            end
+            return count
+        end
+        local runeMapping = {
+            blood = {1, 2},
+            unholy = {3, 4},
+            frost = {5, 6},
+            any = {1, 2, 3, 4, 5, 6}
+        }
+        -- Function to access the mappings
+        local function getRuneSet(runeType)
+            return runeMapping[runeType]
+        end
+
+        local countDRForType = function(type)
+            local state_array = t.state
+            local count = 0
+            local runes = getRuneSet(type)
+            if runes then
+                for _, rune in ipairs(runes) do
+                    if state_array[rune].type == 4 and state_array[rune].expiry < state.query_time then
+                        count = count + 1
+                    end
+                end
+            else
+                print("Invalid rune type:", type)
+            end
+            return count
+        end
+
+        if k == "state" then 
+            return t.state
+        elseif k == "actual" then
+            return countDRForType("any")
+        elseif k == "current" then
+            return countDRForType("any")
+        elseif k == "current_frost" then
+            return countDRForType("frost")
+        elseif k == "current_blood" then
+            return countDRForType("blood")
+        elseif k == "current_unholy" then
+            return countDRForType("unholy")
+        elseif k == "current_non_frost" then
+            return countDRForType("blood") + countDRForType("unholy")
+        elseif k == "current_non_blood" then
+            return countDRForType("frost") + countDRForType("unholy")
+        elseif k == "current_non_unholy" then
+            return countDRForType("blood") + countDRForType("frost")
+        elseif k == "cooldown" then
+            return t.state[1].duration
+        elseif k == "active_death_runes" then
+            return t.getActiveDeathRunes()
+        elseif k == "leftmost_active_death_rune" then
+            return t.getLeftmostActiveDeathRune()
+        elseif k == "active_runes" then
+            return t.getActiveRunes()
+        elseif k == "runes_for_requirement" then
+            return t.getRunesForRequirement
+        end
+    end
+} ) )
 
 spec:RegisterResource( Enum.PowerType.RuneBlood, {
     rune_regen = {
@@ -183,13 +396,13 @@ spec:RegisterResource( Enum.PowerType.RuneFrost, {
     reset = function()
         local t = state.frost_runes
 
-        for i = 1, 2 do
-            local start, duration, ready = GetRuneCooldown( i + 4 )
+        for i = 5, 6 do
+            local start, duration, ready = GetRuneCooldown( i )
 
             start = start or 0
             duration = duration or ( 10 * state.haste )
 
-            t.expiry[ i ] = ready and 0 or start + duration
+            t.expiry[ i - 4 ] = ready and 0 or start + duration
             t.cooldown = duration
         end
 
@@ -438,71 +651,77 @@ spec:RegisterResource( Enum.PowerType.RuneUnholy, {
 
 -- Talents
 spec:RegisterTalents( {
-    abominations_might         = { 10281, 2, 53137, 53138        },
-    annihilation               = { 2048 , 3, 51468, 51472, 51473 },
-    anti_magic_zone            = { 2221 , 1, 51052               },
-    blade_barrier              = { 2017 , 3, 49182, 49500, 49501 },
-    bladed_armor               = { 1938 , 3, 48978, 49390, 49391 },
-    blood_caked_blade          = { 5457 , 3, 49219, 49627, 49628 },
-    blood_parasite             = { 1960 , 2, 49027, 49542        },
-    bone_shield                = { 6703 , 1, 49222               },
-    brittle_bones              = { 1980 , 2, 81327, 81328        },
-    butchery                   = { 5372 , 2, 48979, 49483        },
-    chilblains                 = { 2260 , 2, 50040, 50041        },
-    chill_of_the_grave         = { 1981 , 2, 49149, 50115        },
-    contagion                  = { 12119, 2, 91316, 91319        },
-    crimson_scourge            = { 10289, 2, 81135, 81136        },
-    dancing_rune_weapon        = { 5426 , 1, 49028               },
-    dark_transformation        = { 2085 , 1, 63560               },
-    death_advance              = { 15322, 2, 96269, 96270        },
-    desecration                = { 5467 , 2, 55666, 55667        },
-    ebon_plaguebringer         = { 5489 , 2, 51099, 51160        },
-    endless_winter             = { 1971 , 2, 49137, 49657        },
-    epidemic                   = { 1963 , 3, 49036, 49562, 81334 },
-    hand_of_doom               = { 11270, 2, 85793, 85794        },
-    howling_blast              = { 1989 , 1, 49184               },
-    hungering_cold             = { 1999 , 1, 49203               },
-    icy_reach                  = { 10147, 2, 55061, 55062        },
-    improved_blood_presence    = { 5410 , 2, 50365, 50371        },
-    improved_blood_tap         = { 12223, 2, 94553, 94555        },
-    improved_death_strike      = { 5412 , 3, 62905, 62908, 81138 },
-    improved_frost_presence    = { 2029 , 2, 50384, 50385        },
-    improved_icy_talons        = { 2223 , 1, 55610               },
-    improved_unholy_presence   = { 2013 , 2, 50391, 50392        },
-    killing_machine            = { 2044 , 3, 51123, 51127, 51128 },
-    lichborne                  = { 2215 , 1, 49039               },
-    magic_suppression          = { 5469 , 3, 49224, 49610, 49611 },
-    mangle                     = { 5499 , 1, 33917               },
-    merciless_combat           = { 1993 , 2, 49024, 49538        },
-    might_of_the_frozen_wastes = { 7571 , 3, 81330, 81332, 81333 },
-    morbidity                  = { 5443 , 3, 48963, 49564, 49565 },
-    nerves_of_cold_steel       = { 2022 , 3, 49226, 50137, 50138 },
-    on_a_pale_horse            = { 11275, 1, 51986               },
-    pillar_of_frost            = { 1979 , 1, 51271               },
-    rage_of_rivendare          = { 5435 , 3, 51745, 51746, 91323 },
-    resilient_infection        = { 7572 , 2, 81338, 81339        },
-    rime                       = { 1992 , 3, 49188, 56822, 59057 },
-    rune_tap                   = { 5384 , 1, 48982               },
-    runic_corruption           = { 5451 , 2, 51459, 51462        },
-    runic_power_mastery        = { 2031 , 3, 49455, 50147, 91145 },
-    sanguine_fortitude         = { 10299, 2, 81125, 81127        },
-    scarlet_fever              = { 10285, 2, 81131, 81132        },
-    scent_of_blood             = { 5380 , 3, 49004, 49508, 49509 },
-    shadow_infusion            = { 5447 , 3, 48965, 49571, 49572 },
-    sudden_doom                = { 5414 , 3, 49018, 49529, 49530 },
-    summon_gargoyle            = { 5495 , 1, 49206               },
-    threat_of_thassarian       = { 2284 , 3, 65661, 66191, 66192 },
-    toughness                  = { 5431 , 3, 49042, 49786, 49787 },
-    unholy_blight              = { 5461 , 1, 49194               },
-    unholy_command             = { 5445 , 2, 49588, 49589        },
-    unholy_frenzy              = { 5408 , 1, 49016               },
-    vampiric_blood             = { 5416 , 1, 55233               },
-    virulence                  = { 1932 , 3, 48962, 49567, 49568 },
-    will_of_the_necropolis     = { 1959 , 3, 52284, 81163, 81164 },
-
-
-    -- Blood Specific Talents
-    veteran_of_the_third_war = { 6713, 1, 50029 },
+    abominations_might         = { 10281, 2, 53137, 53138                      },
+    annihilation               = { 2048 , 3, 51468, 51472, 51473               },
+    anti_magic_zone            = { 2221 , 1, 51052                             },
+    blade_barrier              = { 2017 , 3, 49182, 49500, 49501               },
+    bladed_armor               = { 1938 , 3, 48978, 49390, 49391               },
+    blood_caked_blade          = { 5457 , 3, 49219, 49627, 49628               },
+    blood_of_the_north         = { 10183, 3, 54639, 54638, 54637               },
+    blood_parasite             = { 1960 , 2, 49027, 49542                      },
+    blood_rites                = { 10305, 3, 49467, 50033, 50034               },
+    bone_shield                = { 6703 , 1, 49222                             },
+    brittle_bones              = { 1980 , 2, 81327, 81328                      },
+    butchery                   = { 5372 , 2, 48979, 49483                      },
+    chilblains                 = { 2260 , 2, 50040, 50041                      },
+    chill_of_the_grave         = { 1981 , 2, 49149, 50115                      },
+    contagion                  = { 12119, 2, 91316, 91319                      },
+    crimson_scourge            = { 10289, 2, 81135, 81136                      },
+    dancing_rune_weapon        = { 5426 , 1, 49028                             },
+    dark_transformation        = { 2085 , 1, 63560                             },
+    death_advance              = { 15322, 2, 96269, 96270                      },
+    desecration                = { 5467 , 2, 55666, 55667                      },
+    ebon_plaguebringer         = { 5489 , 2, 51099, 51160                      },
+    endless_winter             = { 1971 , 2, 49137, 49657                      },
+    epidemic                   = { 1963 , 3, 49036, 49562, 81334               },
+    frost_strike               = { 10189, 1, 49143                             },
+    hand_of_doom               = { 11270, 2, 85793, 85794                      },
+    heart_strike               = { 10303, 1, 55050                             },
+    howling_blast              = { 1989 , 1, 49184                             },
+    hungering_cold             = { 1999 , 1, 49203                             },
+    icy_reach                  = { 10147, 2, 55061, 55062                      },
+    icy_talons                 = { 10153, 5, 50880, 50884, 50885, 50886, 50887 },
+    improved_blood_presence    = { 5410 , 2, 50365, 50371                      },
+    improved_blood_tap         = { 12223, 2, 94553, 94555                      },
+    improved_death_strike      = { 5412 , 3, 62905, 62908, 81138               },
+    improved_frost_presence    = { 2029 , 2, 50384, 50385                      },
+    improved_icy_talons        = { 2223 , 1, 55610                             },
+    improved_unholy_presence   = { 2013 , 2, 50391, 50392                      },
+    killing_machine            = { 2044 , 3, 51123, 51127, 51128               },
+    lichborne                  = { 2215 , 1, 49039                             },
+    magic_suppression          = { 5469 , 3, 49224, 49610, 49611               },
+    mangle                     = { 5499 , 1, 33917                             },
+    master_of_ghouls           = { 10233, 1, 52143                             },
+    merciless_combat           = { 1993 , 2, 49024, 49538                      },
+    might_of_the_frozen_wastes = { 7571 , 3, 81330, 81332, 81333               },
+    morbidity                  = { 5443 , 3, 48963, 49564, 49565               },
+    nerves_of_cold_steel       = { 2022 , 3, 49226, 50137, 50138               },
+    on_a_pale_horse            = { 11275, 1, 51986                             },
+    pillar_of_frost            = { 1979 , 1, 51271                             },
+    rage_of_rivendare          = { 5435 , 3, 51745, 51746, 91323               },
+    reaping                    = { 10245, 3, 49208, 56834, 56835               },
+    resilient_infection        = { 7572 , 2, 81338, 81339                      },
+    rime                       = { 1992 , 3, 49188, 56822, 59057               },
+    rune_tap                   = { 5384 , 1, 48982                             },
+    runic_corruption           = { 5451 , 2, 51459, 51462                      },
+    runic_power_mastery        = { 2031 , 3, 49455, 50147, 91145               },
+    sanguine_fortitude         = { 10299, 2, 81125, 81127                      },
+    scarlet_fever              = { 10285, 2, 81131, 81132                      },
+    scent_of_blood             = { 5380 , 3, 49004, 49508, 49509               },
+    scourge_strike             = { 10251, 1, 55090                             },
+    shadow_infusion            = { 5447 , 3, 48965, 49571, 49572               },
+    sudden_doom                = { 5414 , 3, 49018, 49529, 49530               },
+    summon_gargoyle            = { 5495 , 1, 49206                             },
+    threat_of_thassarian       = { 2284 , 3, 65661, 66191, 66192               },
+    toughness                  = { 5431 , 3, 49042, 49786, 49787               },
+    unholy_blight              = { 5461 , 1, 49194                             },
+    unholy_command             = { 5445 , 2, 49588, 49589                      },
+    unholy_frenzy              = { 5408 , 1, 49016                             },
+    vampiric_blood             = { 5416 , 1, 55233                             },
+    vengeance                  = { 93099, 1, 93099                             }, -- This is not a valid talentId, same for Paladin
+    veteran_of_the_third_war   = { 10309, 3, 49006, 49526, 50029               },
+    virulence                  = { 1932 , 3, 48962, 49567, 49568               },
+    will_of_the_necropolis     = { 1959 , 3, 52284, 81163, 81164               },
 } )
 
 
@@ -511,33 +730,32 @@ spec:RegisterTalents( {
 spec:RegisterGlyphs( {
     [58623] = "antimagic_shell",
     [59332] = "blood_boil", 
-    [58640] = "blood_tap", 
-    [58620] = "chains_of_ice", 
+    [58640] = "blood_tap",
+    [58673] = "bone_shield", -- 15% movement speed
+    [58620] = "chains_of_ice",
+    [63330] = "dancing_rune_weapon", -- threat improvement
     [96279] = "dark_succor", 
     [58629] = "death_and_decay", 
-    [63333] = "death_coil", 
+    [63333] = "death_coil",
+    [60200] = "death_gate", -- death gate cooldown
     [62259] = "death_grip",
+    [59336] = "death_strike", -- Increases damage based on RP.
     [58677] = "deaths_embrace",
     [58647] = "frost_strike",
+    [58616] = "heart_strike", -- damage of heart_strike by 30%.
     [58680] = "horn_of_winter",
     [63335] = "howling_blast",
     [63331] = "hungering_cold",
+    [58631] = "icy_touch", -- damage buff
+    [58671] = "obliterate", -- damage buff
+    [59307] = "path_of_frost", -- fall damaged
     [58657] = "pestilence",
-    [58676] = "vampiric_blood",
+    [58635] = "pillar_of_frost", -- cc immune, str pct
+    [58669] = "rune_strike", -- damage buff, un
+    [59327] = "rune_tap", -- %5 health to party
+    [58618] = "strangulate",
+    [58676] = "vampiric_blood"
 } )
-    -- [58673] = "bone_shield", -- 15% movement speed unused.
-    -- [63330] = "dancing_rune_weapon", -- threat improvement unused.
-    -- [60200] = "death_gate", -- death gate cooldown, unused
-    -- [59336] = "death_strike", -- Increases damage based on RP. unused.
-    -- [58616] = "heart_strike", -- damage of heart_strike by 30%. unused.
-    -- [58631] = "icy_touch", -- damage buff, unused
-    -- [58671] = "obliterate", -- damage buff, unused
-    -- [59307] = "path_of_frost", -- fall damaged, unused
-    -- [58635] = "pillar_of_frost", -- cc immune unused.
-    -- [58669] = "rune_strike", -- damage buff, unused
-    -- [59327] = "rune_tap", -- %5 health to party unused.
-    -- [58618] = "strangulate", -- unused
-
 
 -- Auras
 spec:RegisterAuras( {
@@ -572,10 +790,16 @@ spec:RegisterAuras( {
         tick_time = 3,
         max_stack = 1,
     },
-    -- Damage increased by $48266s1%.  Healed by $50371s1% of non-periodic damage dealt.
+    -- Stamina increased by 8%. Armor contribution from cloth, leather, mail and plate items increased by 55%. Damage taken reduced by 8%.
     blood_presence = {
-        id = 48266,
+        id = 48263,
         duration = 3600,
+        max_stack = 1,
+    },
+    -- When you deal damage with Death Strike while in Blood Presence, you gain a percentage of your health gained as a physical absorption shield. Absorbs %d Physical damage.
+    blood_shield = {
+        id = 77535,
+        duration = 10,
         max_stack = 1,
     },
     -- Blood Rune converted to a Death Rune.
@@ -623,8 +847,8 @@ spec:RegisterAuras( {
     },
     -- You have recently summoned a rune weapon.
     dancing_rune_weapon = {
-        id = 49028,
-        duration = function() return glyph.dancing_rune_weapon.enabled and 17 or 12 end,
+        id = 81256,
+        duration = 12,
         max_stack = 1,
     },
     -- Taunted.
@@ -632,6 +856,29 @@ spec:RegisterAuras( {
         id = 56222,
         duration = 3,
         max_stack = 1,
+    },
+    --Transformed into an undead monstrosity. Damage dealt increased by 60%.
+    dark_transformation = {
+        id = 63560,
+        duration = 30,
+        max_stack = 1,
+        generate = function ( t )
+            local name, _, count, _, duration, expires, caster = FindUnitBuffByID( "pet", 63560 )
+
+            if name then
+                t.name = name
+                t.count = 1
+                t.expires = expires
+                t.applied = expires - duration
+                t.caster = caster
+                return
+            end
+
+            t.count = 0
+            t.expires = 0
+            t.applied = 0
+            t.caster = "nobody"
+        end,
     },
     -- $s1 Shadow damage inflicted every sec
     death_and_decay = {
@@ -680,35 +927,11 @@ spec:RegisterAuras( {
         tick_time = 3,
         max_stack = 1,
     },
-    -- Stamina increased by $61261s1%.  Armor contribution from cloth, leather, mail and plate items increased by $48263s1%.  Damage taken reduced by $48263s3%.
+    -- Damage increased by 10%. Runic Power generation increased by 10%.
     frost_presence = {
-        id = 48263,
+        id = 48266,
         duration = 3600,
         max_stack = 1,
-    },
-    -- Decreases the time between attacks by $s2% and heals $s1% every $t1 sec.
-    ghoul_frenzy = {
-        id = 63560,
-        duration = 30,
-        tick_time = 3,
-        max_stack = 1,
-        generate = function ( t )
-            local name, _, count, _, duration, expires, caster = FindUnitBuffByID( "pet", 63560 )
-
-            if name then
-                t.name = name
-                t.count = 1
-                t.expires = expires
-                t.applied = expires - duration
-                t.caster = caster
-                return
-            end
-
-            t.count = 0
-            t.expires = 0
-            t.applied = 0
-            t.caster = "nobody"
-        end,
     },
     -- Stunned.
     glyph_of_death_grip = {
@@ -764,14 +987,45 @@ spec:RegisterAuras( {
         duration = 600,
         max_stack = 1,
     },
+    -- Strength increased by 20%. Immune to movement from external sources.
+    pillar_of_frost = {
+        id = 51271,
+        duration = 20,
+        max_stack = 1,
+    },
     -- Any presence is applied.
     presence = {
         alias = { "blood_presence", "frost_presence", "unholy_presence" },
         aliasMode = "first",
         aliasType = "buff",
     },
+    raise_dead = {
+        duration = function () return  talent.master_of_ghouls.enabled and 3600 or 60  end,
+        max_stack = 1,
+        generate = function( t )
+            local up, name, start, duration, texture = GetTotemInfo( 1 )
+            if up then
+                t.count = 1
+                t.expires = start + duration
+                t.applied = start
+                t.caster = "player"
+                return
+            end
+
+            t.count = 0
+            t.expires = 0
+            t.applied = 0
+            t.caster = "nobody"
+        end,
+    },
     rune_strike_usable = {
         duration = 5,
+        max_stack = 1,
+    },
+    -- Rune regeneration rate increased by %d %.
+    runic_corruption = {
+        id = 51460,
+        duration = 3,
         max_stack = 1,
     },
     -- Successful attacks generate runic power.
@@ -779,6 +1033,29 @@ spec:RegisterAuras( {
         id = 50421,
         duration = 20,
         max_stack = 3,
+    },
+    -- Grants your successful Death Coils a chance to empower your active Ghoul, increasing its damage dealt by 6% for 30 sec.  Stacks up to 5 times.
+    shadow_infusion = {
+        id = 91342,
+        duration = 30,
+        max_stack = 5,
+        generate = function ( t )
+            local name, _, count, _, duration, expires, caster = FindUnitBuffByID( "pet", 91342 )
+
+            if name then
+                t.name = name
+                t.count = count
+                t.expires = expires
+                t.applied = expires - duration
+                t.caster = caster
+                return
+            end
+
+            t.count = 0
+            t.expires = 0
+            t.applied = 0
+            t.caster = "nobody"
+        end,
     },
     -- Silenced.
     strangulate = {
@@ -792,6 +1069,12 @@ spec:RegisterAuras( {
         duration = 30,
         max_stack = 1,
         copy = { 61777, 50514, 49206 },
+    },
+    -- Your next Death Coil consumes no runic power.
+    sudden_doom = {
+        id = 81340,
+        duration = 10,
+        max_stack = 1,
     },
     -- Armor increased by $s1%.  Strength increased by $s2%.
     unbreakable_armor = {
@@ -810,7 +1093,13 @@ spec:RegisterAuras( {
         duration = 30,
         max_stack = 1,
     },
-    -- Attack speed increased $s1%.  Movement speed increased by $49772s1%.  Global cooldown on all abilities reduced by ${$m2/-1000}.1 sec.
+    -- Strength increased by 15%.
+    unholy_strength = {
+        id = 53365,
+        duration = 15,
+        max_stack = 1,
+    },
+    -- Attack speed and rune regeneration increased 10%. Movement speed increased by 15%. Global cooldown reduced by 0.5 sec.
     unholy_presence = {
         id = 48265,
         duration = 3600,
@@ -822,10 +1111,16 @@ spec:RegisterAuras( {
         duration = function() return glyph.vampiric_blood.enabled and 40 or 25 end,
         max_stack = 1,
     },
+    -- Increases attack power by $s1%.
+    vengeance = {
+        id = 76691,
+        duration = 3600,
+        max_stack = 1
+    },
 
     will_of_the_necropolis = {
-        id = 81164,
-        copy = {52284, 81163},
+        id = 96171,
+        copy = {52284, 81163, 96171},
         max_stack = 1,
         duration = 8,
     }
@@ -859,15 +1154,11 @@ spec:RegisterAuras( {
 
 local GetRuneType, IsCurrentSpell = _G.GetRuneType, _G.IsCurrentSpell
 
-spec:RegisterPet( "ghoul", 26125, "raise_dead", 3600 )
+spec:RegisterPet( "ghoul", 26125, "raise_dead", 3600)
 
--- spec:RegisterHook( "reset_precast", function ()
---     for i = 1, 6 do
---         if GetRuneType( i ) == 4 then
---             applyBuff( "death_rune_" .. i )
---         end
---     end
--- end )
+spec:RegisterHook( "reset_precast", function ()
+    death_runes.reset()
+end )
 
 
 -- Abilities
@@ -900,8 +1191,7 @@ spec:RegisterAbilities( {
         cooldown = 120,
         gcd = "off",
 
-        spend = 1,
-        spendType = "unholy_runes",
+        spend_runes = {0,0,1},
 
         talent = "antimagic_zone",
         startsCombat = false,
@@ -918,28 +1208,19 @@ spec:RegisterAbilities( {
     -- Summons an entire legion of Ghouls to fight for the Death Knight.  The Ghouls will swarm the area, taunting and fighting anything they can.  While channelling Army of the Dead, the Death Knight takes less damage equal to her Dodge plus Parry chance.
     army_of_the_dead = {
         id = 42650,
-        cast = 0,
+        cast = 4,
         cooldown = 600,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "unholy_runes",
-        spend2 = 1,
-        spend2Type = "frost_runes",
-        spend3 = 1,
-        spend3Type = "blood_runes",
+        spend_runes = {1,1,1},
 
-        gain = 15,
+        gain = 30,
         gainType = "runic_power",
 
         startsCombat = true,
         texture = 237511,
 
         toggle = "cooldowns",
-
-        timeToReady = function()
-            return max( blood_runes.time_to_1, frost_runes.time_to_1, unholy_runes.time_to_1 )
-        end,
 
         start = function ()
             gain( 30, "runic_power" )
@@ -955,10 +1236,9 @@ spec:RegisterAbilities( {
         cooldown = 0,
         gcd = "spell",
 
-        spend = function ()
-            return buff.crimson_scourge.up and 0 or 1
+        spend_runes = function ()
+            return buff.crimson_scourge.up and {0,0,0} or {1,0,0}
         end,
-        spendType = "blood_runes",
 
         gain = 10,
         gainType = "runic_power",
@@ -974,15 +1254,12 @@ spec:RegisterAbilities( {
     },
 
 
-    -- Strengthens the Death Knight with the presence of blood, increasing damage by 15% and healing the Death Knight by 4% of non-periodic damage dealt. Only one Presence may be active at a time.
+    -- You assume the presence of Blood, increasing Stamina by 8%, armor contribution from cloth, leather, mail and plate items by 55%, and reducing damage taken by 8%.  Increases threat generated.  Only one Presence may be active at a time, and assuming a new Presence will consume any stored Runic Power.
     blood_presence = {
-        id = 48266,
+        id = 48263,
         cast = 0,
         cooldown = 1,
         gcd = "off",
-
-        spend = 1,
-        spendType = "blood_runes",
 
         startsCombat = false,
         texture = 135770,
@@ -1003,8 +1280,7 @@ spec:RegisterAbilities( {
         cooldown = 0,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "blood_runes",
+        spend_runes = {1,0,0},
 
         gain = 10,
         gainType = "runic_power",
@@ -1044,8 +1320,7 @@ spec:RegisterAbilities( {
         cooldown = 60,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "unholy_runes",
+        spend_runes = {0,0,1},
 
         gain = 10,
         gainType = "runic_power",
@@ -1069,8 +1344,7 @@ spec:RegisterAbilities( {
         cooldown = 0,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "frost_runes",
+        spend_runes = {0,1,0},
 
         gain = function() return 10 + ( 2.5 * talent.chill_of_the_grave.rank ) end,
         gainType = "runic_power",
@@ -1113,9 +1387,6 @@ spec:RegisterAbilities( {
         cooldown = 8,
         gcd = "off",
 
-        spend = 0,
-        spendType = "rage",
-
         startsCombat = true,
         texture = 136088,
 
@@ -1124,6 +1395,31 @@ spec:RegisterAbilities( {
         end,
     },
 
+    --Consume 5 charges of Shadow Infusion on your Ghoul to transform it into a powerful undead monstrosity for 30 sec.  The Ghoul's abilities are empowered and take on new functions while the transformation is active.
+    dark_transformation = {
+        id = 63560,
+        cast = 0,
+        cooldown = 0,
+        gcd = "spell",
+
+        spend_runes = {0,0,1},
+
+        talent = "dark_transformation",
+
+        startsCombat = false,
+        texture = 342913,
+        usable = function()
+            if pet.ghoul.down then return false, "requires a living ghoul" end
+            if buff.shadow_infusion.stacks < 5 then return false, "requires five stacks of shadow_infusion" end 
+            return true 
+        end,
+
+        handler = function()
+            applyBuff("dark_transformation")
+            removeBuff("shadow_infusion")
+        end,
+
+    },
 
     -- Corrupts the ground targeted by the Death Knight, causing 62 Shadow damage every sec that targets remain in the area for 10 sec.  This ability produces a high amount of threat.
     death_and_decay = {
@@ -1132,8 +1428,7 @@ spec:RegisterAbilities( {
         cooldown = 30,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "unholy_runes",
+        spend_runes = {0,0,1},
 
         gain = 10,
         gainType = "runic_power",
@@ -1156,7 +1451,7 @@ spec:RegisterAbilities( {
         cooldown = 0,
         gcd = "spell",
 
-        spend = 40,
+        spend = function() return buff.sudden_doom.up and 0 or 40 end,
         spendType = "runic_power",
 
         startsCombat = true,
@@ -1164,6 +1459,8 @@ spec:RegisterAbilities( {
 
         handler = function ()
             if talent.unholy_blight.enabled then applyDebuff( "target", "unholy_blight" ) end
+            if talent.shadow_infusion.rank == 3 then addStack( "shadow_infusion" ) end
+            removeBuff("sudden_doom")
         end,
 
         copy = { 49892, 49893, 49894, 49895 }
@@ -1177,8 +1474,7 @@ spec:RegisterAbilities( {
         cooldown = 60,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "unholy_runes",
+        spend_runes = {0,0,1},
 
         startsCombat = false,
         texture = 135766,
@@ -1222,9 +1518,11 @@ spec:RegisterAbilities( {
         texture = 136146,
 
         toggle = "cooldowns",
+        usable = function () return buff.raise_dead.up or pet.up end,
 
         handler = function ()
             dismissPet( "ghoul" )
+            removeBuff("raise_dead")
             gain( 0.4 * health.max, "health" )
         end,
     },
@@ -1236,10 +1534,7 @@ spec:RegisterAbilities( {
         cooldown = 0,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "frost_runes",
-        spend2 = 1,
-        spend2Type = "unholy_runes",
+        spend_runes = {0,1,1},
 
         gain = 20,
         gainType = "runic_power",
@@ -1256,6 +1551,7 @@ spec:RegisterAbilities( {
 
         handler = function ()
             health.current = min( health.max, health.current + action.death_strike.healing )
+            if buff.blood_presence.up then applyBuff("blood_shield") end
         end,
         copy = { 49999, 45463, 49923, 49924 }
     },
@@ -1283,17 +1579,35 @@ spec:RegisterAbilities( {
             gain( 2, "unholy_runes" )
         end,
     },
+    --An instant attack that deals 150% weapon damage plus 560 and increases the duration of your Blood Plague, Frost Fever, and Chains of Ice effects on the target by up to 6 sec.
+    festering_strike = {
+        id = 85948,
+        cast = 0,
+        cooldown = 0,
+        gcd = "spell",
 
+        spend_runes = {0,1,1},
 
-    -- The death knight takes on the presence of frost, increasing Stamina by 8%, armor contribution from cloth, leather, mail and plate items by 60%, and reducing damage taken by 8%.  Increases threat generated.  Only one Presence may be active at a time.
+        startsCombat = true,
+        texture = 135371,
+
+        handler = function ()
+            if dot.frost_fever.ticking then
+                applyDebuff( "target", "frost_fever" )
+            end
+            if dot.blood_plague.ticking then
+                applyDebuff( "target", "blood_plague" )
+            end
+        end,
+
+    },
+
+    -- Strengthens you with the presence of Frost, increasing damage by 10% and increasing Runic Power generation by 10%.  Only one Presence may be active at a time, and assuming a new Presence will consume any stored Runic Power.
     frost_presence = {
-        id = 48263,
+        id = 48266,
         cast = 0,
         cooldown = 1,
         gcd = "off",
-
-        spend = 1,
-        spendType = "frost_runes",
 
         startsCombat = false,
         texture = 135773,
@@ -1327,34 +1641,6 @@ spec:RegisterAbilities( {
     },
 
 
-    -- Grants your pet 25% haste for 30 sec and  heals it for 60% of its health over the duration.
-    ghoul_frenzy = {
-        id = 63560,
-        cast = 0,
-        cooldown = 10,
-        gcd = "spell",
-
-        spend = 1,
-        spendType = "unholy_runes",
-
-        gain = 10,
-        gainType = "runic_power",
-
-        talent = "ghoul_frenzy",
-        startsCombat = false,
-        texture = 132152,
-
-        usable = function()
-            if pet.ghoul.down then return false, "requires a living ghoul" end
-            return true
-        end,
-
-        handler = function ()
-            applyBuff( "ghoul_frenzy" )
-        end,
-    },
-
-
     -- Instantly strike the target and his nearest ally, causing 50% weapon damage plus 125 on the primary target, and 25% weapon damage plus 63 on the secondary target.  Each target takes 10% additional damage for each of your diseases active on that target.
     heart_strike = {
         id = 55050,
@@ -1362,11 +1648,11 @@ spec:RegisterAbilities( {
         cooldown = 0,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "blood_runes",
-
+        spend_runes = {1,0,0},
         gain = 10,
         gainType = "runic_power",
+
+        talent = "heart_strike",
         startsCombat = true,
         texture = 135675,
 
@@ -1402,16 +1688,10 @@ spec:RegisterAbilities( {
         cooldown = 8,
         gcd = "spell",
 
-        spend = function()
-            if buff.freezing_fog.up then return 0 end
-            return 1
+        spend_runes = function()
+            if buff.freezing_fog.up then return {0,0,0} end
+            return {0,1,0}
         end,
-        spendType = "frost_runes",
-        spend2 = function()
-            if buff.freezing_fog.up then return 0 end
-            return 1
-        end,
-        spend2Type = "unholy_runes",
 
         gain = function() return 15 + ( 2.5 * talent.chill_of_the_grave.rank ) end,
         gainType = "runic_power",
@@ -1462,8 +1742,6 @@ spec:RegisterAbilities( {
         cooldown = 180,
         gcd = "off",
 
-        spend = 0,
-        spendType = "runic_power",
 
         startsCombat = false,
         texture = 237525,
@@ -1483,8 +1761,7 @@ spec:RegisterAbilities( {
         cooldown = 0,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "frost_runes",
+        spend_runes = {0,1,0},
 
         gain = function() return 10 + ( 2.5 * talent.chill_of_the_grave.rank ) end,
         gainType = "runic_power",
@@ -1545,6 +1822,26 @@ spec:RegisterAbilities( {
         end,
     },
 
+    -- A vicious strike that deals 100% weapon damage and absorbs the next (0.70 * Attack power) healing received by the target.
+    necrotic_strike = {
+        id = 73975,
+        cast = 0,
+        cooldown = 0,
+        gcd = "spell",
+
+        spend_runes = {0,0,1},
+
+        gain = 10,
+        gainType = "runic_power",
+
+        startsCombat = true,
+        texture = 132481,
+
+        handler = function ()
+            -- TODO:
+        end,
+    },
+
 
     -- A brutal instant attack that deals 80% weapon damage plus 467, total damage increased 12.5% per each of your diseases on the target, but consumes the diseases.
     obliterate = {
@@ -1553,10 +1850,7 @@ spec:RegisterAbilities( {
         cooldown = 0,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "frost_runes",
-        spend2 = 1,
-        spend2Type = "unholy_runes",
+        spend_runes = {0,1,1},
 
         gain = function() return 15 + ( 2.5 * talent.chill_of_the_grave.rank ) end,
         gainType = "runic_power",
@@ -1598,8 +1892,7 @@ spec:RegisterAbilities( {
         cooldown = 0,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "frost_runes",
+        spend_runes = {0,1,0},
 
         startsCombat = false,
         texture = 237528,
@@ -1617,8 +1910,7 @@ spec:RegisterAbilities( {
         cooldown = 0,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "blood_runes",
+        spend_runes = {1,0,0},
 
         gain = 10,
         gainType = "runic_power",
@@ -1638,6 +1930,29 @@ spec:RegisterAbilities( {
         end,
     },
 
+    --Calls upon the power of Frost to increase the Death Knight's Strength by 20%.  Icy crystals hang heavy upon the Death Knight's body, providing immunity against external movement such as knockbacks.  Lasts 20 sec.
+    pillar_of_frost = {
+        id = 51271,
+        cast = 0,
+        cooldown = 60,
+        gcd = "off",
+
+        spend_runes = {0,1,0},
+
+        gain = 10,
+        gainType = "runic_power",
+
+        talent = "pillar_of_frost",
+
+        startsCombat = true,
+        texture = 458718,
+
+        handler = function()
+            applyBuff("pillar_of_frost")
+        end,
+
+    },
+
 
     -- A vicious strike that deals 50% weapon damage plus 189 and infects the target with Blood Plague, a disease dealing Shadow damage over time.
     plague_strike = {
@@ -1646,8 +1961,7 @@ spec:RegisterAbilities( {
         cooldown = 0,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "unholy_runes",
+        spend_runes = {0,0,1},
 
         gain = 10,
         gainType = "runic_power",
@@ -1682,22 +1996,13 @@ spec:RegisterAbilities( {
     raise_dead = {
         id = 46584,
         cast = 0,
-        cooldown = function() return 180 - ( 45 * talent.night_of_the_dead.rank ) - ( 60 * talent.master_of_ghouls.rank ) end,
+        cooldown = function() return 180 - ( talent.master_of_ghouls.enabled and 60 or 0 ) end,
         gcd = "spell",
 
         essential = true,
 
         startsCombat = false,
         texture = 136119,
-
-        item = function()
-            if glyph.raise_dead.enabled then return end
-            return 37201
-        end,
-        bagItem = function()
-            if glyph.raise_dead.enabled then return end
-            return true
-        end,
 
         toggle = function()
             if talent.master_of_ghouls.enabled then return end
@@ -1707,7 +2012,13 @@ spec:RegisterAbilities( {
         usable = function() return not pet.up, "cannot have a pet" end,
 
         handler = function ()
-            summonPet( "ghoul" )
+            if talent.master_of_ghouls.enabled then
+                summonPet( "ghoul" )
+            else
+                removeBuff( "raise_dead" )
+                summonTotem( "raise_dead" )
+                applyBuff( "raise_dead" )
+            end
         end,
     },
 
@@ -1733,8 +2044,9 @@ spec:RegisterAbilities( {
         cooldown = 30,
         gcd = "off",
 
-        spend = 1,
-        spendType = "blood_runes",
+        spend_runes = function ()
+            return buff.will_of_the_necropolis.up and {0,0,0} or {1,0,0}
+        end,
 
         talent = "rune_tap",
         startsCombat = true,
@@ -1755,15 +2067,13 @@ spec:RegisterAbilities( {
         cooldown = 0,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "frost_runes",
-        spend2 = 1,
-        spend2Type = "unholy_runes",
+        spend_runes = {0,0,1},
 
         gain = 20,
         gainType = "runic_power",
 
         talent = "scourge_strike",
+
         startsCombat = true,
         texture = 237530,
 
@@ -1780,8 +2090,7 @@ spec:RegisterAbilities( {
         cooldown = function() return  120 - (30 * talent.hand_of_doom.rank) end,
         gcd = "spell",
 
-        spend = 1,
-        spendType = "blood_runes",
+        spend_runes = {1,0,0},
 
         gain = 1,
         gainType = "runic_power",
@@ -1831,7 +2140,7 @@ spec:RegisterAbilities( {
 
         talent = "unholy_frenzy",
         startsCombat = false,
-        texture = 237512,
+        texture = 136224,
 
         toggle = "cooldowns",
 
@@ -1841,15 +2150,12 @@ spec:RegisterAbilities( {
     },
 
 
-    -- Infuses the death knight with unholy fury, increasing attack speed by 15%, movement speed by 15% and reducing the global cooldown on all abilities by 0.5 sec.  Only one Presence may be active at a time.
+    -- You are infused with unholy fury, increasing attack speed and rune regeneration by 10%, and movement speed by 15%, and reducing the global cooldown on your abilities by 0.5 sec.  Only one Presence may be active at a time, and assuming a new Presence will consume any stored Runic Power.
     unholy_presence = {
         id = 48265,
         cast = 0,
         cooldown = 1,
         gcd = "off",
-
-        spend = 1,
-        spendType = "unholy_runes",
 
         startsCombat = false,
         texture = 135775,
@@ -1870,11 +2176,8 @@ spec:RegisterAbilities( {
         cooldown = 60,
         gcd = "off",
 
-        spend = 0,
-        spendType = "runic_power",
-
         talent = "vampiric_blood",
-        startsCombat = true,
+        startsCombat = false,
         texture = 136168,
 
         toggle = "defensives",
@@ -1891,7 +2194,7 @@ spec:RegisterAbilities( {
 spec:RegisterOptions( {
     enabled = true,
 
-    aoe = 3,
+    aoe = 2,
 
     gcd = 47541,
 
@@ -1901,34 +2204,34 @@ spec:RegisterOptions( {
     damage = true,
     damageExpiration = 6,
 
-    package = "Blood (Beta)",
+    potion = "golemblood",
+
+    package = "Blood",
     usePackSelector = true,
 } )
 
 
-spec:RegisterPack( "Blood (Beta)", 20240523, [[Hekili:nFvtVnUnq0FllwGIKUzvLSZxfiEpe0dnUa5Ic6rjstnYIWYKcuuRRlwWF7DOKIfLIuC822G9qIT5mZJZm8npkffe9uuycvdrpoZF2L(xnBUN)Tb((3gfQ3xarHfu2g6A8lc6w8)3NlLjgYz3dA65wR7ZL0elkLYkfd9ikCvfpx)GiA1iq7F9LZrFlaw0JxhfMXtsGgpHswu4tz8sdX(h1qA3AdrMI)MP5sHHKZl1O5uPYq(DydpN7ffwVOnjOsa)4X6YQjclYuDwmvKeNam6(OqqqxLdjr3hPXCZ6A3kHmfxdkonk8dgsIu7TYwXXf501vGNMZ2WfRnKFAeJkivbLzwOmKV9ndPfHuLSuhNcFfuVaaxBoX3L9Yk9kfq3yZ15tMRhBBMSioRPZ(viEaegYN6zYfbd5odrRQG4whabSLd4XYpBiZmKZ7s)cOuZZbbYmWc4YJ1ShPg6WIZ2hRLvSmluxDmOgRKDYR61Jl1k(M6u76jXdBrnyPQeqPhRsPaHUU)0KUVC9krMmF)qdNx33M1LeW2c5oqv7x8oGwGlIPYntMkOJCwCDqEjqkNX1ny63bAnyD11Ttc2QQ0up8NBlLI4sgo(Ug8Qk6qQPQxj55wG(1jbkdO56mVcgMmFXqU2FaZ6a7anoVh7O)oe47o2IOQ0pxi9Mz12z6uAvU(fZ6B54yoofb)n8MNZtK7eoBRujILPX74c0(HPUdzS02DZ4qEYGn4YEAoubd5B9oz77(08x325DlmKB8hQLnG1(SXQsigbzB5GTAA(0ihqbO6mcpZEE0Juf389yRwBJIBCZvcwn3xLO9JNq60C5twhQH0EQ19RiefeCmMHRstdmEU8cpRB1TguzOnKT0)A0o1B5EIPzFbtpu9DOufm91BV7sWbtFt1jkBgC1BwuRqbm52vuRSw9c7OkbEaGZZpGPPsdj1xV2aw7Jc5zwAJuMYTK9p(rdP9r0(n7HLH8hc(6mSYp7b2Ed5pbUO8CZsRF4tLn)Z(x95zZnlnlBaT8tl(fhnu3L7lmEbpDHv401dhTr3LhrlSNzhsLf1o5V7wCJF)u7GcN7Id0MUWQkTafLUOrhBrGf1(kDFjWfGNvgS(9H)TkvhBcBcDk385G(YHeAmaDcONgYRxfhVX)oRUm4K0TkMwdXnOrMGTb)FTKrpI(HjC7onHGqVzhNXEhgThYspCqC4fugA(hk6zBo19y9ncbFhN7))92hdt2tBE65k80NPAJ89Mq2UTN(WtBGNgBE0Go13ayiA9VwKwPXlBIcFsMKKxF)N92WO)5d]] )
+spec:RegisterPack( "Blood", 20240628, [[Hekili:nV1)VTTnw8)wkkUGM1mFXolRDaXfO9Alw7HRTyU7YVzzAj6yIilkqrfVmeO)2V3JKsMuIu2jXo9WWAITiFVpVV)4Jktho97tNKqK0PFz0PJ(Lt)1rVEWOHd)TrNnDI82C60j5K4Rjxb)sgzf8VVlLZtWV92uojb3DbVuedp5s(LtyRkMozEjlv(PSPZ9s5HVA6esPCjxmDYKYCQiRSa20swscvVhAr80jFFjROAwUGXfm5TvZWpnNuqtQMXZQMjxsRMz44GPtszfYcemeof(XxuIfnJmpLMm9DAAky5sgpB6K3tjYLvZizaTEpnMau)NRM9Nn0oMZtt4RHFBbxun7TF9dvZsiRukbsSMgjinIaseLGuyQeKYw8SEP8s5CbLCDlu8288uGZihe0fcAbaPVAwkiUlQMPu1vZ(wk5QsQELFuWlKWpO3qHpreWxtMdmaui8Qz0)kNjaqcmrsfmcYX5LlwmyosPOCfHgiORiSmqDEX4QzdRMD3DG4Px3cK8rlqQ3AzOaEwabmNwizP0m0jWrebvka)MNQLQ5Cu53sqqtrlXvjCsw81SSRoXSKuArbA7jOhGqTkad3a)KMrxXOfMTXYwqJLakTvfCPJ8ziD1SJaXhEMJoY(HVOMlrTir1Sx68iBkaQTMN1GTFQA2OQzhJ6YFjGUCjLiKrfsb762AZ3txqktnM6Fhxx1SjQf21rvRQHGerTM8CTd0c6Ae4gizRFAdw0SFoc1ZdavT4oNZs9z2nwZ3bpUlywXvgxLD8CpgreP)lbeAJHJtIHemOiHUO6ebL59H83Oik6wRCQJ1ekQqtNbWMbP6xdiv6aBVgaLCzsEuR4rjdSzP43HiJi1OFonLVgWXP)d9NnQdinhnnrV0mUSw0TLgn1gKhln2Gt1YYZmIJwTxOiKrwEvazHfFBKKxgV0FQh3yW1mug(um8GVJ7rlBmPfyBIkubJQuWscOsL4Utb7CQYmQCgTnXdbrOGgZZsC84EMoWluqPM0WxTIcsrucJQmTdpff5xhkxKk6ZV9Zi2TYZOL76pzBxFcK9GjD6v4)T(RUzLMOL3QcDOd2gjXXXmqyaWsGX7kp)JYmAlwEfeBkisfxfLzSyOYohseTHFW3sTzxVfWvbI)oxaQxoyNUKLjrpy3A3iuWkys4)ngmm(XkvlqGi(IO1QTR4A7s4D56FqyMSaDAwazyr5Qv43sazEjVm1i)KKegsec8fV)BtSeBKCqleqNus4)agQuKBTfgfw(pm0a(rbL(31kALOikZHMHA4XkyzrluRYxBkbtD)XsXT14h1DcmzbQVjsj0tOXec1hfKygkzK5SuvVAQ98vrCXXTRwSaOPVwj6cIj3MrYv)c0dy2vf1ijZvB2dSOzxXYOuHYR7Qu(nyTbOpeiSuAbScnJIk08XxX5UOdcJxvG8yWvdob7fHLDnvwCSRpXgMucmqThFfu9uKHKfRGTow6skjhPRNMtzzXqdJQwxZjc0GHYh2RLk6UtBRAchPc3wRiBFfdzXuO7s09HlKmzzI3sIFYSkWLPEzBTW4zyHrLeu3WIGMuAyB4IHNDAF17c0PTcK))DR1HkNnNJPfn5M9ePYvPARBQODnlskiXj36RlJMUj2WatZeTlUudLBiRavaloAU(eGDrZ)1SIg17U0CuBV461RCFBkvjOXuqcs6VrjVfQCQWij5EZQRcZ(ojxJ5lvf05lmLn(cnwWZ5PQJG20dADtRkbGUIc1RZWMNmy2gPknn2LawUbizuwdfnk9o17QrnDLkDMtaRhb4dRmz9CtySlgaZXGD7QT2ds5)STUtps1CQgXdSBCyGE7BTY6eOhmSHtmqtDignTWEQWqsRtpGaZP7k3dpCRJ5os)7riv2Y5fgQhHqKEgh4qeqqh6aVpGZiyYUGk))mBjh7dfnP1hyDrzA6jBZwDY99Oe6Cok(miUuiOzWYgRoekMzQubKWp)bCsKHHoxRD)DbdaTvyRPgvtCkhxb6BOADmY4PhtCoeO1Z2ilVzSZMgSI8xQz9OBJEy)NSnqUcJ6Vjzb0BubeVNsng5tQTWgZLXzqOKqLH9gclf559n27fGFsal6WTyrBQfHoUEF8X7wCC7of2QZVNEwEyhajur)7rE9EcVELk8sUM3ai7WZgtw9GOY8Vo4yEq9DjwhZ60xQv0xs0xRtIQD78goEKxBNUuSAnAh6GTrC)gvZUp6LEgWYWqnsOfKC4J94(8nsSjZVZjUuwU2DLPnK7uZM7qD6nhjZQpTMjk5VH0rHA6ONX5PpeR7y8uv62Mp4EXf8r7RnkuhlhOHoTBdosHSqdI)qpBODC(okm27bGdooLGZlz02pY6byEjJ2(jzpWZljhoyaF1CI3jM4M9dwArO7OO2SBwcM4ybxhnHe3KSjROu35j135awVKMTzdfsiWUOtYfxOmqnKapZK5bD8VZ3mPX9Oa0OHJAMIP(GwHAoMiwDB95Cugkpa)TWASoGL27y4UIFLNsD(oTheMUtLv0CGxxzzo9kinUxzr3jyWUw34UTnF7Z2c43vpDpy8mFdnkqu5of4pSgRhw)KH9nAPCED3aTXlbhHh(5EbA9Cjb(MJ5GbLhE3I8czqSOYyaflkqEvFP0NoDYAIitn6VjFcogTU25zvohcTyq1Nr6YxWsHmip)5n5mufy)3zSRwkR(m(1BUJAZ1tx9z1doOjAQ(SgTfdAK9xo(F6MT5e2IXHsc5GXdEwLaODtYUt6ybhd4WcJ)qsG4h2TZ35b7dDW(biTHFKTj7LhmDMnKEksr4hJUPV8P7SX5Jn1GFmOjziEdC)5O1s3swdu69YxA4dqDRRFXtMG9XLSyZTnxZInZoWxMInaADDk2Oy3U0eBI1CTj2KzpF5i28ZZ1JyZ598fDyZ5U30cMUEZPnVy8zojr2lxNHnaQV7eKT9C1gxmE4D3f(knUWnE9(D)eo(Xwfdae9mpxwHnJEcU6bB05ExiTTuULQoa3TGnuQh)vt19G3ZGnOoO3xGn88C)fDvxh9m9g8m0rdO3F3qqlDN9DeCco9)XeUk0tVP6lj4noU1)iNVVt6kl1fIzpthE8O7UZ3uHXV31iC3DpZ3u976kFFNsFhV1na2Zq7FZ4wdS)ND7E6PD87DlTAc1EHpD9Wa6AvkZotuB8WJ3UJVp)T73i1d5W0toQFKZjpuUnBN1xF6rEMF54rhfCULJ95dTRd8URtaoj9MeUDh)ThB3t28S7AUXjT3a2Ut3(IZDZe42NXt6aQTXU9KZvO)bAWFKJD2ThnZKTvDKe6vx0HTpQ5jBZBNzx3WFVV(GAae(vYZF64(po4onQyhZNZ56cE83h6eHDeIgx6nhxd7rqRfinD0D)Ev)3CurOHGMyPMx4FxZmU397lXFB2FqAp)h5RMFBbCZFebkr0FW1rHC6p6fM(1ATXxA91277c327(Prh7lSz)8s23wsBNzZfkqRy9wQA)(A03gBUL3A1dmuOy3l4TFFb59hnUrhEFAL9Xwr4r8gG3wm2Pkkh19Db)ndpDFwNzpkr7EDQEfRhZlXEF(kBT4OM6HEF1Bt6du9Z6efpr1qRfgRl7s9xA3xZm)5(vn7fVJkjhpDsrongVth8QuM()c]] )
 
-spec:RegisterPack( "Frost DK (IV)", 20221001, [[Hekili:DAvxVrQnu0FlRwP08XczystAsvsEOQQsjRuEzQ2hbBGldwdyJSndAQI8V9ETjDgddKnPVKmCTVN7X3po2XrX)D8QCQgIFz5ILlJwSikm6MLrxFx8k9UgiEvdnBdDn(doTg)7FjfkTH8NF3qo9PFCMD9DvcAUfhLOvMH7PuRBu)(Lx211fYY2fSfyCvyMO(YoHUAtqwfvPyzxwyXkihO6YGnC26s8JgvqZwiqk0untWdYeIQCrhxfqtzvmnduXRsBzv6N4XPtW9OBrI0azXVCdYewEo0VpqLnG9nsMqY07mKuQcYneb3qEkd)(hw6(lgY6wwoeINqPOGvHNRV(vd5)qWsAd57owBtf7D8mZZ29zzuq0IGfrMNnptZShgvyJeW0qkvFXdxMwje5jOffWZGP3tPqYtefjDmUgKFJv8qABrr4qZH28Jxuq)Qz88Kcja)d4BglgjArBwPfPVKl0HUsqsbSfHrZY2W4R9DOu0vHMssXkM2606QDnLHdmhcCAAfKFYhbWMk66wirPLSnWEw8wQWT2KEbknwbW0K1LzcZjZH0jwG2cjJ87cpZ(UD)YZ1sKJVTmWHASPZNoT8ujq3yp1juzTq6VypuAAJRA5(q2YbS)VvkbU((L(7wKI90GeBIN)82NZZzkaBu3NT)0zHth7HeWoevPfUxF9i38w9mFUb1nIoq6oujDaTrWN5KErFWgARLxkQ2nkLC1GSRcsWCs9GuEgTQkP)ZKkg2lAvJEGkGVzBLY0pezjXWs2Jr(i0tMdnEUbPnSkxJCnnRKXHW2M3T735JBSYAUqSEKd9jH(ymxS9Ldq(pomJx0PoMqXX5CiJUZnYul2AlOfwTNejutrzNhrzpSOQqx7LdxC3YBcJIx1rLCC3OQ5tyLtQTsDxzi9rXqSjtvO554vUFzLXXaJ)7f3vd9Bdfs95y8Q3AcJ)Jyngn7gpyzvM02sZOXR(IH0Zvd5edzaFnKhnKBpeGrNtexT1ybTTsFeB8K3(mCzMrMd4UxF0c1vZc17ic6oOFKqnmHIH7x)zmFQH6d4nqy1I31ZI3CY0wQpRASDXP1rnKlgSKV7gY94vHgY5gYeAQESFVGNL634xRpsSDuf)3M9CoHKupFoa(EXAls36h2dcZJI3D)K2Ir607ZQ)VY4NESVE6YgYRVobad2XzZLKJw85sCyrEc9CN9P00Dz6Roe8jU2WXIbZ17L(hLZJMFSEyhLtvbf96VuWQASh7X3G0l4L0)QwRKND7ZpZpZ1fhW3xJ3H18d0tDnY7OmeDTFoY)oMXPPbdodi0GnQTVP9ThzEK26WNL(HLxN7DP(Nl)fD0ajcTvxANPXhqh4E)SZC8)c]] )
+spec:RegisterPack( "Frost", 20240712, [[Hekili:1IvBVTTnq4FlbfWFzDE2UXPRD1gyfPdTPOnf1POyyOsIwI2MisKcsuXZdb63(UJuYwIIuoV1V04ksEV(WN7o6n27kVfrej17Ztgn50rVC8KHJNmA60jElK7sPElsjHxtwd)GtsG)9VYe5s8R7IfKi805IISqyLVl((cwsU3ILfSy5h4ElTk5tpfoskn07ZN5TydlkIQ3jnp0BXvBy5LbPzmrgtURma)Flj50OYabVmqUHwguPNHElIz5YCLdqxrkILWp)SYHOCYYyAK3B9weccIMXiGzfler(zfCA(WWISmkxwgmRmyuzWGYGvOF5C1c(gr8oBl7TGekzcoO0KuXwAMAt(BPKu4JsW5DBqfRwnSsY5sqKRLBgwKEqIPS4ysMVyLVY6qP9IhU00()QISDOGo9(kivCqTMHz12KfQ)cky69vbhes(oojnN6Ndab(6CuAN5uAss2AQCOKLq9Lc)igarEdKzEXb5PZTGQyxtrH9YhJWelJXDJaBqu)(JruBeBJbh0FzmrNDFLH0Q3ygHbHJikCHtDrjJLQx4R4cLb4kLbHcEed)oCP5xV6YZV81LbKiyHpKKsKmkpe2QyvzWFlkKBG1G9rIbZLdREdSMuugyg7nZBDt(hag9bAmKlMVbhE8ihESgSkjPgo8BXVdwkjTP)20kHyHCJ5nvmWpwBmnybQZnWkZldMoCQYKmzqSIIABvnxcjlIOzG5rZKegWAbkJfcSAi7GlRwThF1woy1ZrREK2QmPr2dhlKlZOKRnSO3XZlWanGnaecWGI56mW4WZDdTPQpb2Jqou7dRO3awGKfET6W3EBzq166axAmzDbTEdklZKsYo6UT59E9ALbVfxSmyldbKFfYhi7ViSdSBvgL(FO0wjwxJDmPWEikMbxhuL0G)GUUUKdxiVFrkL9yY4vBpAejHhb3Gdj7mSOVHxGpNFoOzaR8NI3b3bzYcIE1wkprCJY2XYvS1BGYv0eaHLRHVQVRnAFkNMWO6fgRmotc09e2QeQDy9bq0xu7QmyrfehdsfQYY6m33u38vqDfsJhHry1v16JE84Qnew)vFNOCnt687Wf2VLRKDvMV2R0(Y(7Tn5tf82oxZ70oUhRd(JUlTxyLZ6inFOihu(VznilvQCLxVC)wEW50UPZhtU0vfWEYLMjXnuix9rOmLsLFIeUHXROvCzXkkMR1hXprFIkwMjUQqTrKXXYGBzCjIbCeHFpSnDv3VR2yLjeVLSZQPCsv9Y2IV2ymRn1sPNR7cg1ztsUE63yIRQk33goEKTjOSfZ6i29TwzB3T4nXS4GRiv7SJZ0lksx879rHwr0yYFQbPn7qyFbAHI5rehj2YTq20MwsDIeQSz8)NevthAS2Dpnz40J0F1ev)v4SJz0qrYsI151QdQvwcS3CSXvZ2apmt4(XodToGrTagIXtBZJTFOJIKeb3Fn02UyxmTHz6NtXyoOIZSncMlcblNFSkaaHaO1HC8q6rJpB8RgcZBVLKX19CxpgSyflUIMnHLRHs5fPPImiRSsaGH1qL(meCaal(1uz(WYaOHFP(qkliHc9JI9mVHaFg7AzxRrS5HXfri8Jc0(0SxxEbm(qzW)OAm5dsAs(pEoIyzHBAUBcF3bTwvAN(VPXSqMm(GCJ091OMCVwP)bK5YQvZvAraiSFub3p8Pjn08wGrPHhvjsz9wvrd1N4fjlPzOIZJHkrLxaJ)abm8dt0mUiSr92bWIq(dggsa5RffPWOqf54lyGWRlXRVkqeMlvPcVfp7z7PGohVj9ro2iw5fWN7Ijbx8c8aFjJMwGwVw5W3R(XW9yKFz2VzayFoB1mNaz7sWac)8oiWzNz)GTHUwo34Ax5tk(Q9(b(ji(jcHck(ce(4xZDDWlbfy5Tru(x3NKz2ObwiWGVAJAA2OMkXOMJzaS5yPno1HNf5oEa9tC0ZMh4QcydHymoCVQwH5yCwoeEBfvBw0dLq3NC4nZErZdCOJW702B1VqpNqb))P)uenTSd9NSpY1nEpO38t3hKOYrS)edDHmWgqLBPG6BMnEG16GZNcvj1A5H9Kb9L9T8ecZNnEuTcpYlc0cMu9McOupXXeV3E7jo7ZxRWJnJFVinBd97qUhDe(EvKl)Rsz9nDEt5AmJVsY6X1h0Au95thOnQ6r0NpUt(5PFy7w0xn7wDFeWwE0oL7K9rMNWrOVJ465W40okpy5AOJIgZN1nK)KnhSB22hwu(boCBFXthd72jMCxMCT9vRwnrGil7tYwPjhJR6826rQZ8uvDW06ANbCex76sgXoNXP23M(zpNyVebpbxSgyDaX5WOFokiwpuO3))d]] )
 
-spec:RegisterPack( "Frost DK (wowtbc.gg)", 20221003, [[Hekili:vAvxVTTnu0FlffWibPr(RMK1b78WWWaAkq2dQa7njrrDTfHLifiPQHhm4V9DjvSnPSuAhqrJc5LN73NtsMN89K4cIgsEDXSflMpB2YOzF5Zlx(usS(qdKe3qO7iBXp4KA8))lPqPnz)53S3COsqkSiOeTskEBPw3O(9Pt3l2RZPrB3IFPR2nLwruQ732Yka10nwiUVai6Y73XzBl1ttIZBzv6VYtYhmCwSa9rdqtE9r0jSIcOZsqrtI)EjtzYAKmHKPpyYS)worbfMS2gb3KPlbt25qYK9ps01Mmx4eLexXuALRoaBiTvA8ZxD1fcvZe8K4AgViDJeG)ftrGtYRGIK)irJbP1SlNetXiaKmss8hmzfcDKlxt3a)aKrAgDhJV9cUm6HuTOLwAHA5pdQ8kHOiTPISTfUgRUZtvAjBhyX7Z(zqlpxcKDwWtjYAHSxE8GVXnIUFgyXJbWPGum6Qv9m6PrZHUGx2YbveTvkbooeTYKT4cODMOjnwK(nF3jYRS4yhlc93xg1FJu7nztgVy6U8gtM1T)as7bHlCF7kGd1mahZoEmWCFuh1(TvhAkJkykaNrJEl6p57(XTeQjmUYb2dDV)QWVNn3I)ZRzcknRc4u3qX8z))6q3zY6IMRpVLxkQomqlD5fNd1nI9G0zu6EGGBJUOy(Orr)c2ZMS5UAtE7Mnr7yvvyJkTMqlzCiQT5IVkf7D3LJunANxgF5SVxw)l7LUQXLTS5JV26WsYQ)zHzWIAa(Hd7ZdwslfsEQyt6Egh9xOPASTlbQOoNCHmZlgpTGJ0A40HSfH0smC64E8aVlnNljrNPStyrfI98(l0NU8mh3PRLeCfifLbk6LObfeNmrkbjGlak5W7XBHeBhSLeKUFiyFC0Kahpz0u3OAeQbWOmD3K3SrR3Ni7EpotxJyprYX(nYu(vCzqQTR6l6igSstoTNiZlisT6slV8zDkBtuSb3DtI)4hnzNeEbN213C6MiLXzZV18I1SLMS)MQf5wclReQ5fZlDotfDEO4U1t7c4pzf1xp4CWWplSN(j2M1xpbm8lV0Uh((En6HnQFlEyRc7v2GCGo8ZZN9EvgV6gEM3FbG)XNfWT(4dJP549Gav6ZpAqXiVxDL6DaKHDlR5NuN9p8S6QRNDnx)Qf(wFrXnWvN1sSGms6ozSmAYnVr727HRczJpE0ZmFCUYUbfsNCZisORE44XXKox9WT36NOdOBnsz7UbKhVBiPXvl9DqGkGf6WC755tgrjYheFTIRXy9Vegxfi(QwJ5Sqa6XlQts(V)]] )
-
-spec:RegisterPack( "Unholy (IV)", 20220926.3, [[Hekili:TAv0Ujoou0Vf0if1oDskqNYqxb9Hv7lTRuFHzNhtIXXawKehf7aIri)TVx7uc2b72z7oVurJTp3JV(CV3t8O4VhVidjiXVmE44XdFy8KOXJUF49XlehQiXlQq4TO1WpkrfWF)NYnS8dY0RE6hxRw8qodLPWGZAQXWg2iev8)42B3VFFefFiChHwYJWSIB3Ze5BdX5ioNIVTrduygbj2eUTKUEJimRIhwTJewZeibLvgIzS8m2(sEiAjnNkOeE8ILn0CXtLXlDs8Vof4sfbh)YeGm0Sms7ojCC8IVVHYLPv1uwnva3c1)TeXjzYuwPmvSHitFcdl8dfRLPRBOzKO4f5uUGRZuKvOMCb8Zx0zoewXZ4ff0YSKv1eYpHuaPeTmNKf)NXcGCQTD(llWqKj1uu8IbY0mMiAzoJLLuLJw3qIeu8wA5AzAaWgu9AIa(ubjrWsYOa5ECUmD0q9YRuPSKAsbst12voZOwat4IA6wIIi39EezvnJlswr2rQ)nYdqdaNQbVrXHV6LdVfbEZS0vYuvO2rs6bHmDw3sKssbODKPhpATDtuDU)RnsOeUGMtkX6S59EVj9H4riFOzkKMly7oX7(Pnz60ZXsxvKGanvgbJoOc4KFZPovMOhhMzXH2JDw)8nt9ohdL7R7Kx2s(PEPAlM1nLeOLqtDnPuitbbZW(HvGQui9GvmBkkyLjRb5i7qE)GcAoFrTcuVR3WAYJAQodN(lQA2YFQtWJSkOB4Ke48f8(HXF9mCTO4Kk2E4na6tqXu4YntvoCF)xwmJMRrZFr5YMvRI2WQltyRs2tlfkuHwHNHYErnC(RVaXNgXxfd1eUsjdjeTmPfYOEz42sEof2OwCSgd9j)SmDS(mN6nh19If9QsQ)J5POPPO)cNoajf6KOwNKSNGQaQvtqzh0X1RgQTSsxi4B12HoVTaeJaQMNOYwTVcjTt(SeMJ8xoAKMv5e1n6uJkNu)gpK(gF0fEjUZQZKJ8LMJF7xsQ2Hl0cAYqVk1PMvhNBQ3R6WQG1EeuVXIdn3PvVgRnkayQjG9HLOZtD9N37e2DP9ovvFXTwrzuW3MRn1Q(l19eRb)6H7Ykd)TceiySJiQaXHpOQ41TU4rN2ChO1ik02cE4YCnSLbn)4eX5TVdbWVu1jDhkVH8)zsIlpcZATi4EqJYIae)xRTYaEd2W4jST63CGKq85kwA4UlEXEuDjetOdZtGMVwOmUn(u7lzQ2MwK8zLMHTIQUzF6tY0tEw)lLIwM(3AZMklSDo9Uw(SAJQqfo8HWXtKplFUfvEuN(7M532tL8f6Q5xQfcEBrGBKTfeEaEWhb5ZQcfQVJyYneNukFr9Cn3416lALZCpcNaFIMJhVuWmB0WJhTekWxmEhaAy4Y28Zw9zu3Xb(IBWLH9X5Jggyfw1xmHVRzxh0UUQFeKpBPub9)1KyWvVA1S3bNz7a94rJTzItV9DTjZ6zavrp7D)4OGbTUz7DfNAcJzF9pYvSVGWcCBpOxgwy6RUm6YHUZTEf6vkzUKPhrfwMojn3xNBXlZHQbOQJ6WD4S5JU38a2g66Ab4We4LxwZghdC70lO9mVHlVzGdVppoWVZoZ4A4tQTTGvw)9nZf48HjWHxi4RUCcz)k6ioDzqB3ybx5iY34iU34kQZUZrHIRh5x3)JtC3mXBdmF1pWC7gbOfGzFDZT0JkJ)3p]] )
+spec:RegisterPack( "Unholy", 20240712, [[Hekili:1IvxpUjox4FlrvkAsBx2ats7(rYCr1EtNvQ3Kw1lwvahWjXAaBKTPZMQi(TVhBiGHytMPVVZnTzS95dF(4XNhc9d)C4MuKeh(PG5blM)E)apF)Llw8UWnYJf4WnfOKhq7HFqr5W)(f6bw2r1YhZyOuL4cwjpb26RSVUHKlc3STKKj)inCRDvFlisboj8tGnoqstX1Nelsc385dervCbNW4e5XQy1FTfjWPvXmAvS8aUkUXoEHBYicPqFdW7qLzs4NFsFJqjscJgUjNqtJ2XX4Fa(hMI2MHtd)qOeCj1X6wztcypmNGGRnIVhl9KKCCKKfLsatE36Qy)LvXNovfR093XrykoNGb37oyRolMI4pej5iQyhJNJ0lcM72NL5wvfFBv80lTfSrqNTejqKFposi5KhWkZS4LWm7WcLsO7nm0YxcdLIrYdrjmsMYeVZPj2wUBNxPUqu5sy6E5bVYIof1ShK4P)4OsxV)5QR6uT17IQu4wJKWrkQqajHcvisOS2V9YzTTzmgurxY1xRF))VgkyzNHkyNlD9N)8TcKQ17ni40ljXkLB5y0dAB4)tzJBQItySSu2JuVE582RQP022shpZkfs9YZmsRL55mA0EiuXoMPR59hbZacL1iblp7ytQItzsVDCMqgTd)Dmhc4jpaHHAZ3SFDcTidTVe3DGzoctUHrCBUovrsoc57YKdAD5gRyexZOarVUbKGVBmbNbIPJfeQJJnqgdurv8B6TLPg0WkdrAEnuE3lUwaOAKmmnP25DJ2arJC23p7r7i7piJ44CeHwd()0EwqdTHGxJsXjiDZRVBqjl6kyigW2gys)rqB0hKxsXI2M9GgmL6lJoGA)aJJ)77g6PPB7AA9YhVcgbO5A3Kj1jag1BO369afGhgg9mSQBONjgWldWd8GwY0JNnTgkb8osc86fNxwO9KgqQjwGAC9MxGBiMXYvgyoJgfCwP2V1OhorWTMduniRnyMk3qk1bNc2Jq3FsjhqIL1tvTyHHZRJtwMGQ)BkhqqgjIq3vku7jKWeQ6EEOtCw9v8MZNTunEjGqWY7RdJ1B7LxnId0EOzotDlnJtx0ZmisnkCZpBLSBaLNqLC7tIdJzQnCM(8Np3za5Pbm1QoqBZRZqwA29TdckrfAt5gn6Cv1bgNgX2f9iHc70RfS)w6P1FAirx66MnPxUBpKXEB35m4CDuwFOOhXOc9qys49kooHLVf1rYXW)olDJfGZk0VSPzvXjf17(HoIuTC1gmO1zj9uLkxJNe86P0lhPQsvXV9hyLzcVZhU1P4icmciuCKAJj05tH45hvAbO4vF2UBCKa(bnf8wywulSCCKiTQaBKxAhjG18)2LtNgGzpuOonCAFh8M1MhrCQE0)w2RSDWKf1KxZjcHE2brzrbJd5BauPkEpG(YjjWS4qd(dyPWRkUk(JYAH02phttvPl5beSSAONJ9ygttYktv43yceZ4)r19vX)sv8)8fbwPjCU4BVTk(XdKKdMNgrp2z1QyktP8)TiJKqKzD6nv9Rgc3Nn6Fc1o8ZM5Z1QaGa(MsPPMlfyy5hjzzg3OgvkpFuD0qVeTmFlMRmSidMOR6(pMRcyQfcoJjwfRP8dBczTsjKWd3SPSaZPLcHkXPJ8HBE1RQIR)sfvX)Lcv6VPQ52QUhw)YUa4kDFT(fET5(3S(xh0n9wYU1x2Kyx0UAELuxPvXUkg2q82lklx7p3UO9BeSjOD5QBaSF(wjGZz8zvmx2YdN13(H0nVBT)YtN6phYD(MQQ)Cg21YQBN2xfRcmvXWNp)Pus3tApdXnvqpUNTvqw4ZAE57ZAEePoDYIlT2)wtT19jd(FurnvhpxLeS0ujNPZoIAM64th0le1FiMX02no)ebNoz9Zd0SS586ZCDfu3078xo9Mjo44E60exmC7P02zUvA1LY6Lnm5F3kKvM0Ms1Y6vjIdZm1LMMEttX(abFJXYMYTQFVXRdMDzVvlNy9DOMP90ESSV7kyfD8HvQyWjVkKGvQLqP)uReUwT(kWu2z)oqmZj3h1hMulJl6CobQMm(0(tN4IXAZo9(SyUQsDfGGMHrD7lYM9ll6htDFhTWj5U1lwawFeAKtDtHC1YzNoDJfkqtDrzC11OloBSIVXkiEHY7niB9VENoznscm7U0db(wdRxBey98Pw5T1VbCWGjkp2o7mtHSqjYTtyHbgSQnMxRNRNOp8)(d]] )
 
 
 
-spec:RegisterPackSelector( "blood", "Blood (Beta)", "|T135770:0|t Blood",
+spec:RegisterPackSelector( "blood", "Blood", "|T135770:0|t Blood",
     "If you have spent more points in |T135770:0|t Blood than in any other tree, this priority will be automatically selected for you.",
     function( tab1, tab2, tab3 )
         return tab1 > max( tab2, tab3 )
     end )
 
-spec:RegisterPackSelector( "frost", "Frost DK (IV)", "|T135773:0|t Frost",
+spec:RegisterPackSelector( "frost", "Frost", "|T135773:0|t Frost",
     "If you have spent more points in |T135773:0|t Frost than in any other tree, this priority will be automatically selected for you.",
     function( tab1, tab2, tab3 )
         return tab2 > max( tab1, tab3 )
     end )
 
-spec:RegisterPackSelector( "unholy", "Unholy (IV)", "|T135775:0|t Unholy",
+spec:RegisterPackSelector( "unholy", "Unholy", "|T135775:0|t Unholy",
     "If you have spent more points in |T135775:0|t Unholy than in any other tree, this priority will be automatically selected for you.",
     function( tab1, tab2, tab3 )
         return tab3 > max( tab1, tab2 )
