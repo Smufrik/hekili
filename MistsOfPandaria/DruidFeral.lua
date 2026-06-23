@@ -2330,13 +2330,17 @@ spec:RegisterAbilities( {
         cooldown = 60,
         gcd = "off",
         school = "nature",
-        toggle = "cooldowns",
         startsCombat = false,
         usable = function()
-            -- Treat as passive/utility: do not actively recommend casting.
-            return false, "passive"
+            if not settingEnabled( "opt_use_ns", false ) then return false, "disabled by setting" end
+            if not ( talent.dream_of_cenarius and talent.dream_of_cenarius.enabled ) then return false, "requires Dream of Cenarius" end
+            if buff.natures_swiftness.up then return false, "buff active" end
+            if buff.predatory_swiftness.up then return false, "predatory swiftness active" end
+            return true
         end,
-        handler = function() end,
+        handler = function()
+            applyBuff( "natures_swiftness" )
+        end,
     },
 
     -- Rejuvenation: Heals the target over time.
@@ -2558,7 +2562,7 @@ spec:RegisterAbilities( {
         cooldown = 0,
         gcd = "totem",
         school = "physical",
-        texture = 62078,
+        texture = "Interface\\Icons\\Ability_Druid_Swipe",
         spend = 45,
         spendType = "energy",
         startsCombat = true,

@@ -45,8 +45,8 @@ actions.cooldowns+=/barkskin,if=health.pct<=70|incoming_damage_3s>=health.max*0.
 actions.maint+=/skull_bash,if=target.casting&buff.cat_form.up
 actions.maint+=/faerie_fire,if=variable.maintain_ff&debuff.faerie_fire.down&buff.cat_form.up
 
-actions.snek_prep+=/natures_swiftness,if=talent.dream_of_cenarius.enabled&variable.opt_use_ns_setting&variable.opt_use_ns&cooldown.natures_swiftness.remains=0&!buff.natures_swiftness.up&buff.savage_roar.up&active_enemies<=2&buff.cat_form.up&(buff.tigers_fury.up|cooldown.tigers_fury.remains<=3)
-actions.snek_prep+=/healing_touch,if=talent.dream_of_cenarius.enabled&(variable.opt_snek_weave_setting|variable.opt_use_ns_setting)&(variable.opt_snek_weave|variable.opt_use_ns)&buff.savage_roar.up&((buff.predatory_swiftness.up&combo_points.current<5)|(buff.natures_swiftness.up&(buff.tigers_fury.up|cooldown.tigers_fury.remains<=3)))&buff.cat_form.up
+actions.snek_prep+=/natures_swiftness,if=talent.dream_of_cenarius.enabled&variable.opt_use_ns_setting&variable.opt_use_ns&cooldown.natures_swiftness.remains=0&buff.predatory_swiftness.down&!buff.natures_swiftness.up&active_enemies<=2&buff.cat_form.up
+actions.snek_prep+=/healing_touch,if=talent.dream_of_cenarius.enabled&(variable.opt_snek_weave_setting|variable.opt_use_ns_setting)&(variable.opt_snek_weave|variable.opt_use_ns)&buff.cat_form.up&((buff.predatory_swiftness.up&combo_points.current<5)|buff.natures_swiftness.up)
 actions.snek+=/rip,if=buff.dream_of_cenarius_damage.up&variable.opt_snek_weave_setting&variable.opt_snek_weave&combo_points.current=5&buff.savage_roar.up&active_enemies<3&buff.cat_form.up&rip_refresh_time<=0&use_dots
 actions.snek+=/rake,if=buff.dream_of_cenarius_damage.up&variable.opt_snek_weave_setting&variable.opt_snek_weave&combo_points.current<5&buff.savage_roar.up&active_enemies<3&buff.cat_form.up&rake_refresh_time<=0&use_dots
 actions.snek+=/thrash_cat,if=buff.dream_of_cenarius_damage.up&variable.opt_snek_weave_setting&variable.opt_snek_weave&active_enemies>=4&buff.cat_form.up&(dot.thrash_cat.down|dot.thrash_cat.remains<=4.5)&(use_dots|active_enemies>=2)

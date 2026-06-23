@@ -17,9 +17,19 @@ local function getReferences()
 end
 
 local strformat = string.format
+local min, max = math.min, math.max
 local FindUnitBuffByID, FindUnitDebuffByID = ns.FindUnitBuffByID, ns.FindUnitDebuffByID
 local function UA_GetPlayerAuraBySpellID(spellID)
     return FindUnitBuffByID( "player", spellID ) or FindUnitDebuffByID( "player", spellID )
+end
+
+local function GetInquisitionHolyPower()
+    if state.buff.divine_purpose.up then return 3 end
+    return min( 3, max( 1, state.holy_power.current or 0 ) )
+end
+
+local function GetInquisitionDuration( holyPower )
+    return 20 * min( 3, max( 1, holyPower or 0 ) )
 end
 
 -- MoP Seal detection
@@ -406,13 +416,7 @@ spec:RegisterAuras({
     -- Inquisition: Key damage buff with enhanced tracking
     inquisition = {
         id = 84963,
-        duration = function()
-            local duration = 20 + (10 * state.holy_power.current) -- Base + per Holy Power
-            if state.glyph.inquisition.enabled then
-                duration = duration + 30
-            end
-            return duration
-        end,
+        duration = 60,
         max_stack = 1,
         generate = function( t )
             local name, icon, count, debuffType, duration, expirationTime, caster = GetPlayerAuraBySpellID(84963)
@@ -1399,6 +1403,7 @@ spec:RegisterAbilities( {
         gcd = "spell",
 
         spend = function()
+            state.ret_inquisition_holy_power = GetInquisitionHolyPower()
             if state.buff.divine_purpose.up then return 0 end
             return 3
         end,
@@ -1523,18 +1528,13 @@ spec:RegisterAbilities( {
         texture = 461858,
 
         handler = function()
-            -- Inquisition mechanic - consumes all Holy Power for duration
-            local duration = 30 * state.holy_power.current
+            -- MoP 5.4+: Inquisition consumes up to 3 Holy Power and lasts 20 sec per charge.
+            local holyPower = state.ret_inquisition_holy_power or GetInquisitionHolyPower()
+            local duration = GetInquisitionDuration( holyPower )
+            state.ret_inquisition_holy_power = nil
 
             if state.buff.divine_purpose.up then
-                -- If Divine Purpose, treat as 3 Holy Power
                 removeBuff("divine_purpose")
-                duration = 90
-            end
-
-            -- Glyph of Inquisition increases duration by 30 sec
-            if state.glyph.inquisition.enabled then
-                duration = duration + 30
             end
 
             applyBuff("inquisition", duration)
