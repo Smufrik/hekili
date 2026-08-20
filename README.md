@@ -57,6 +57,10 @@ Arms⚠️
 Fury ❌
 Protection ⚠️
 
+## Maintainer
+
+Maintained by Smufrik. I also contribute to [Next Action Guide (NAG)](https://nextaction.guide/), a separate Classic WoW rotation-coaching project.
+
 ## Project-Wide Editing Workflow
 
 - Rotation and priority order are edited in .simc files.
